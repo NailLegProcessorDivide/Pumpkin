@@ -1,4 +1,3 @@
-use async_trait::async_trait;
 use pumpkin_data::item::Item;
 use pumpkin_data::{
     BlockDirection,
@@ -24,9 +23,8 @@ use crate::{
 #[pumpkin_block_from_tag("minecraft:candles")]
 pub struct CandleBlock;
 
-#[async_trait]
 impl BlockBehaviour for CandleBlock {
-    async fn on_place(&self, args: OnPlaceArgs<'_>) -> BlockStateId {
+    fn on_place(&self, args: OnPlaceArgs<'_>) -> BlockStateId {
         if args.player.get_entity().pose.load() != EntityPose::Crouching
             && let BlockIsReplacing::Itself(state_id) = args.replacing
         {
@@ -42,11 +40,11 @@ impl BlockBehaviour for CandleBlock {
         properties.to_state_id(args.block)
     }
 
-    async fn use_with_item(&self, args: UseWithItemArgs<'_>) -> BlockActionResult {
-        let state = args.world.get_block_state(args.position).await;
+    fn use_with_item(&self, args: UseWithItemArgs<'_>) -> BlockActionResult {
+        let state = args.world.get_block_state(args.position);
         let mut properties = CandleLikeProperties::from_state_id(state.id, args.block);
 
-        let item_lock = args.item_stack.lock().await;
+        let item_lock = args.item_stack.lock();
         let item = item_lock.item;
         drop(item_lock);
         match item.id {
@@ -57,13 +55,11 @@ impl BlockBehaviour for CandleBlock {
                     properties.candles = Integer1To4::from_index(properties.candles.to_index() + 1);
                 }
 
-                args.world
-                    .set_block_state(
-                        args.position,
-                        properties.to_state_id(args.block),
-                        BlockFlags::NOTIFY_ALL,
-                    )
-                    .await;
+                args.world.set_block_state(
+                    args.position,
+                    properties.to_state_id(args.block),
+                    BlockFlags::NOTIFY_ALL,
+                );
                 BlockActionResult::Consume
             }
             _ => {
@@ -73,47 +69,42 @@ impl BlockBehaviour for CandleBlock {
                     return BlockActionResult::Pass;
                 }
 
-                args.world
-                    .set_block_state(
-                        args.position,
-                        properties.to_state_id(args.block),
-                        BlockFlags::NOTIFY_ALL,
-                    )
-                    .await;
+                args.world.set_block_state(
+                    args.position,
+                    properties.to_state_id(args.block),
+                    BlockFlags::NOTIFY_ALL,
+                );
                 BlockActionResult::Consume
             }
         }
     }
 
-    async fn normal_use(&self, args: NormalUseArgs<'_>) -> BlockActionResult {
-        let state_id = args.world.get_block_state_id(args.position).await;
+    fn normal_use(&self, args: NormalUseArgs<'_>) -> BlockActionResult {
+        let state_id = args.world.get_block_state_id(args.position);
         let mut properties = CandleLikeProperties::from_state_id(state_id, args.block);
 
         if properties.lit {
             properties.lit = false;
         }
 
-        args.world
-            .set_block_state(
-                args.position,
-                properties.to_state_id(args.block),
-                BlockFlags::NOTIFY_ALL,
-            )
-            .await;
+        args.world.set_block_state(
+            args.position,
+            properties.to_state_id(args.block),
+            BlockFlags::NOTIFY_ALL,
+        );
 
         BlockActionResult::Consume
     }
 
-    async fn can_place_at(&self, args: CanPlaceAtArgs<'_>) -> bool {
+    fn can_place_at(&self, args: CanPlaceAtArgs<'_>) -> bool {
         let (support_block, state) = args
             .block_accessor
-            .get_block_and_state(&args.position.down())
-            .await;
+            .get_block_and_state(&args.position.down());
         !support_block.is_waterlogged(state.id) && state.is_center_solid(BlockDirection::Up)
     }
 
-    async fn can_update_at(&self, args: CanUpdateAtArgs<'_>) -> bool {
-        let b = args.world.get_block(args.position).await;
+    fn can_update_at(&self, args: CanUpdateAtArgs<'_>) -> bool {
+        let b = args.world.get_block(args.position);
         args.player.get_entity().pose.load() != EntityPose::Crouching
             && CandleLikeProperties::from_state_id(args.state_id, args.block).candles
                 != Integer1To4::L4

@@ -6,6 +6,7 @@ use pumpkin_util::{Difficulty, GameMode, PermissionLvl};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 use std::net::SocketAddr;
+use std::num::NonZeroU32;
 use std::path::PathBuf;
 use std::{env, fs, num::NonZeroU8, path::Path, sync::LazyLock};
 pub mod fun;
@@ -114,7 +115,7 @@ pub struct BasicConfiguration {
     /// The seed for world generation.
     pub seed: String,
     /// The maximum number of players allowed on the server. Specifying `0` disables the limit.
-    pub max_players: u32,
+    pub max_players: Option<NonZeroU32>,
     /// The maximum view distance for players.
     pub view_distance: NonZeroU8,
     /// The maximum simulated view distance.
@@ -163,7 +164,7 @@ impl Default for BasicConfiguration {
             bedrock_edition: true,
             bedrock_edition_address: "0.0.0.0:19132".parse().unwrap(),
             seed: "".to_string(),
-            max_players: 1000,
+            max_players: NonZeroU32::new(1000),
             view_distance: NonZeroU8::new(16).unwrap(),
             simulation_distance: NonZeroU8::new(10).unwrap(),
             default_difficulty: Difficulty::Normal,

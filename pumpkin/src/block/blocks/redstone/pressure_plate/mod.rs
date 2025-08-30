@@ -13,33 +13,33 @@ pub mod plate;
 pub mod weighted;
 
 pub(crate) trait PressurePlate {
-    async fn on_entity_collision_pp(&self, args: OnEntityCollisionArgs<'_>) {
+    fn on_entity_collision_pp(&self, args: OnEntityCollisionArgs<'_>) {
         let output = self.get_redstone_output(args.block, args.state.id);
         if output == 0 {
             self.update_plate_state(args.world, args.position, args.block, args.state, output)
-                .await;
+                ;
         }
     }
 
-    async fn on_scheduled_tick_pp(&self, args: OnScheduledTickArgs<'_>) {
-        let state = args.world.get_block_state(args.position).await;
+    fn on_scheduled_tick_pp(&self, args: OnScheduledTickArgs<'_>) {
+        let state = args.world.get_block_state(args.position);
         let output = self.get_redstone_output(args.block, state.id);
         if output > 0 {
             self.update_plate_state(args.world, args.position, args.block, state, output)
-                .await;
+                ;
         }
     }
 
-    async fn on_state_replaced_pp(&self, args: OnStateReplacedArgs<'_>) {
+    fn on_state_replaced_pp(&self, args: OnStateReplacedArgs<'_>) {
         if !args.moved && self.get_redstone_output(args.block, args.old_state_id) > 0 {
-            args.world.update_neighbors(args.position, None).await;
+            args.world.update_neighbors(args.position, None);
             args.world
                 .update_neighbors(&args.position.down(), None)
-                .await;
+                ;
         }
     }
 
-    async fn update_plate_state(
+    fn update_plate_state(
         &self,
         world: &Arc<World>,
         pos: &BlockPos,
@@ -47,25 +47,25 @@ pub(crate) trait PressurePlate {
         state: &BlockState,
         output: u8,
     ) {
-        let calc_output = self.calculate_redstone_output(world, block, pos).await;
+        let calc_output = self.calculate_redstone_output(world, block, pos);
         let has_output = calc_output > 0;
         if calc_output != output {
             let state = self.set_redstone_output(block, state, calc_output);
             world
                 .set_block_state(pos, state, BlockFlags::NOTIFY_LISTENERS)
-                .await;
-            world.update_neighbors(pos, None).await;
-            world.update_neighbors(&pos.down(), None).await;
+                ;
+            world.update_neighbors(pos, None);
+            world.update_neighbors(&pos.down(), None);
         }
         if has_output {
             world
                 .schedule_block_tick(block, *pos, self.tick_rate(), TickPriority::Normal)
-                .await;
+                ;
         }
     }
 
-    async fn can_pressure_plate_place_at(world: &World, block_pos: &BlockPos) -> bool {
-        let floor = world.get_block_state(&block_pos.down()).await;
+    fn can_pressure_plate_place_at(world: &World, block_pos: &BlockPos) -> bool {
+        let floor = world.get_block_state(&block_pos.down());
         floor.is_side_solid(BlockDirection::Up)
     }
 
@@ -73,7 +73,7 @@ pub(crate) trait PressurePlate {
 
     fn set_redstone_output(&self, block: &Block, state: &BlockState, output: u8) -> BlockStateId;
 
-    async fn calculate_redstone_output(&self, world: &World, block: &Block, pos: &BlockPos) -> u8;
+    fn calculate_redstone_output(&self, world: &World, block: &Block, pos: &BlockPos) -> u8;
 
     fn tick_rate(&self) -> u8 {
         20

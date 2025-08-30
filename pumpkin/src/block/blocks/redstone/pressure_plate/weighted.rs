@@ -1,4 +1,4 @@
-use async_trait::async_trait;
+
 use pumpkin_data::{
     Block, BlockDirection, BlockState,
     block_properties::{BlockProperties, EnumVariants, Integer0To15},
@@ -37,46 +37,46 @@ impl BlockMetadata for WeightedPressurePlateBlock {
     }
 }
 
-#[async_trait]
+
 impl BlockBehaviour for WeightedPressurePlateBlock {
-    async fn on_entity_collision(&self, args: OnEntityCollisionArgs<'_>) {
-        self.on_entity_collision_pp(args).await;
+    fn on_entity_collision(&self, args: OnEntityCollisionArgs<'_>) {
+        self.on_entity_collision_pp(args);
     }
 
-    async fn on_scheduled_tick(&self, args: OnScheduledTickArgs<'_>) {
-        self.on_scheduled_tick_pp(args).await;
+    fn on_scheduled_tick(&self, args: OnScheduledTickArgs<'_>) {
+        self.on_scheduled_tick_pp(args);
     }
 
-    async fn on_state_replaced(&self, args: OnStateReplacedArgs<'_>) {
-        self.on_state_replaced_pp(args).await;
+    fn on_state_replaced(&self, args: OnStateReplacedArgs<'_>) {
+        self.on_state_replaced_pp(args);
     }
 
-    async fn get_weak_redstone_power(&self, args: GetRedstonePowerArgs<'_>) -> u8 {
+    fn get_weak_redstone_power(&self, args: GetRedstonePowerArgs<'_>) -> u8 {
         self.get_redstone_output(args.block, args.state.id)
     }
 
-    async fn get_strong_redstone_power(&self, args: GetRedstonePowerArgs<'_>) -> u8 {
+    fn get_strong_redstone_power(&self, args: GetRedstonePowerArgs<'_>) -> u8 {
         if args.direction == BlockDirection::Up {
             return self.get_redstone_output(args.block, args.state.id);
         }
         0
     }
 
-    async fn emits_redstone_power(&self, _args: EmitsRedstonePowerArgs<'_>) -> bool {
+    fn emits_redstone_power(&self, _args: EmitsRedstonePowerArgs<'_>) -> bool {
         true
     }
 
-    async fn on_neighbor_update(&self, args: OnNeighborUpdateArgs<'_>) {
-        if !Self::can_pressure_plate_place_at(args.world, args.position).await {
+    fn on_neighbor_update(&self, args: OnNeighborUpdateArgs<'_>) {
+        if !Self::can_pressure_plate_place_at(args.world, args.position) {
             args.world
                 .break_block(args.position, None, BlockFlags::NOTIFY_ALL)
-                .await;
+                ;
             return;
         }
     }
 
-    async fn can_place_at(&self, args: CanPlaceAtArgs<'_>) -> bool {
-        Self::can_pressure_plate_place_at(args.world.unwrap(), args.position).await
+    fn can_place_at(&self, args: CanPlaceAtArgs<'_>) -> bool {
+        Self::can_pressure_plate_place_at(args.world.unwrap(), args.position)
     }
 }
 
@@ -86,7 +86,7 @@ impl PressurePlate for WeightedPressurePlateBlock {
         props.power.to_index() as u8
     }
 
-    async fn calculate_redstone_output(&self, world: &World, block: &Block, pos: &BlockPos) -> u8 {
+    fn calculate_redstone_output(&self, world: &World, block: &Block, pos: &BlockPos) -> u8 {
         // light = Gold
         // heavy = Iron
         let weight = if block == &Block::LIGHT_WEIGHTED_PRESSURE_PLATE {
@@ -98,8 +98,8 @@ impl PressurePlate for WeightedPressurePlateBlock {
         };
         // TODO: this is bad use real box
         let aabb = BoundingBox::from_block(pos);
-        let len = world.get_entities_at_box(&aabb).await.len()
-            + world.get_players_at_box(&aabb).await.len();
+        let len = world.get_entities_at_box(&aabb).len()
+            + world.get_players_at_box(&aabb).len();
         let len = len.min(weight);
         if len > 0 {
             let f = (weight.min(len) / weight) as f32;

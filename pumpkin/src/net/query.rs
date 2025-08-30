@@ -6,17 +6,39 @@ use std::{
     time::Duration,
 };
 
-use pumpkin_config::BASIC_CONFIG;
+use parking_lot::RwLock;
 use pumpkin_protocol::query::{
     CBasicStatus, CFullStatus, CHandshake, PacketType, RawQueryPacket, SHandshake, SStatusRequest,
 };
-use pumpkin_world::CURRENT_MC_VERSION;
 use rand::Rng;
-use tokio::{net::UdpSocket, sync::RwLock, time};
+use tokio::{
+    net::UdpSocket,
+    sync::{mpsc::Sender, oneshot},
+    time,
+};
 
-use crate::{PLUGIN_MANAGER, SHOULD_STOP, STOP_INTERRUPT, server::Server};
+use crate::{SHOULD_STOP, STOP_INTERRUPT, net::net_thread::NetResponse};
 
-pub async fn start_query_handler(server: Arc<Server>, query_addr: SocketAddr) {
+pub enum QueryReq {
+    Basic(oneshot::Sender<BasicServerData>),
+    Full(oneshot::Sender<FullServerData>),
+}
+
+pub struct BasicServerData {
+    motd: CString,
+    map: CString,
+    num_players: usize,
+    max_players: usize,
+}
+
+pub struct FullServerData {
+    basic: BasicServerData,
+    version: CString,
+    plugins: CString,
+    players: Vec<CString>,
+}
+
+pub async fn start_query_handler(server: Sender<NetResponse>, query_addr: SocketAddr) {
     let socket = Arc::new(
         UdpSocket::bind(query_addr)
             .await
@@ -32,7 +54,7 @@ pub async fn start_query_handler(server: Arc<Server>, query_addr: SocketAddr) {
 
         loop {
             interval.tick().await;
-            valid_challenge_tokens_clone.write().await.clear();
+            valid_challenge_tokens_clone.write().clear();
         }
     });
 
@@ -63,10 +85,10 @@ pub async fn start_query_handler(server: Arc<Server>, query_addr: SocketAddr) {
             if let Err(err) = handle_packet(
                 buf,
                 valid_challenge_tokens,
-                server,
                 socket,
                 addr,
                 query_addr,
+                server,
             )
             .await
             {
@@ -83,15 +105,15 @@ pub async fn start_query_handler(server: Arc<Server>, query_addr: SocketAddr) {
 async fn handle_packet(
     buf: Vec<u8>,
     clients: Arc<RwLock<HashMap<i32, SocketAddr>>>,
-    server: Arc<Server>,
     socket: Arc<UdpSocket>,
     addr: SocketAddr,
     bound_addr: SocketAddr,
+    info_requester: Sender<NetResponse>,
 ) -> Result<(), NulError> {
-    if let Ok(mut raw_packet) = RawQueryPacket::decode(buf).await {
+    if let Ok(mut raw_packet) = RawQueryPacket::decode(buf) {
         match raw_packet.packet_type {
             PacketType::Handshake => {
-                if let Ok(packet) = SHandshake::decode(&mut raw_packet).await {
+                if let Ok(packet) = SHandshake::decode(&mut raw_packet) {
                     let challenge_token = rand::rng().random_range(1..=i32::MAX);
                     let response = CHandshake {
                         session_id: packet.session_id,
@@ -100,86 +122,80 @@ async fn handle_packet(
 
                     // Ignore all errors since we don't want the query handler to crash
                     // Protocol also ignores all errors and just doesn't respond
-                    let _ = socket
-                        .send_to(response.encode().await.as_slice(), addr)
-                        .await;
+                    let _ = socket.send_to(response.encode().as_slice(), addr).await;
 
-                    clients.write().await.insert(challenge_token, addr);
+                    clients.write().insert(challenge_token, addr);
                 }
             }
             PacketType::Status => {
-                if let Ok(packet) = SStatusRequest::decode(&mut raw_packet).await
-                    && clients
-                        .read()
-                        .await
-                        .get(&packet.challenge_token)
-                        .is_some_and(|token_bound_ip: &SocketAddr| token_bound_ip == &addr)
+                let Ok(packet) = SStatusRequest::decode(&mut raw_packet) else {
+                    // silent error
+                    return Ok(());
+                };
+                if clients
+                    .read()
+                    .get(&packet.challenge_token)
+                    .is_some_and(|token_bound_ip: &SocketAddr| token_bound_ip == &addr)
                 {
-                    if packet.is_full_request {
-                        // Get 4 players
-                        let mut players: Vec<CString> = Vec::new();
-                        for world in server.worlds.read().await.iter() {
-                            let mut world_players = world
-                                .players
-                                .read()
-                                .await
-                                // Although there is no documented limit, we will limit to 4 players
-                                .values()
-                                .take(4 - players.len())
-                                .map(|player| {
-                                    CString::new(player.gameprofile.name.as_str()).unwrap()
-                                })
-                                .collect::<Vec<_>>();
-
-                            players.append(&mut world_players); // Append players from this world
-
-                            if players.len() >= 4 {
-                                break; // Stop if we've collected 4 players
-                            }
-                        }
-
-                        let plugins = PLUGIN_MANAGER
-                            .active_plugins()
-                            .await
-                            .into_iter()
-                            .map(|meta| meta.name.to_string())
-                            .reduce(|acc, name| format!("{acc}, {name}"))
-                            .unwrap_or_default();
-
-                        let response = CFullStatus {
-                            session_id: packet.session_id,
-                            hostname: CString::new(BASIC_CONFIG.motd.as_str())?,
-                            version: CString::new(CURRENT_MC_VERSION)?,
-                            plugins: CString::new(plugins)?,
-                            map: CString::new("world")?, // TODO: Get actual world name
-                            num_players: server.get_player_count().await,
-                            max_players: BASIC_CONFIG.max_players as usize,
-                            host_port: bound_addr.port(),
-                            host_ip: CString::new(bound_addr.ip().to_string())?,
-                            players,
-                        };
-
-                        let _ = socket
-                            .send_to(response.encode().await.as_slice(), addr)
-                            .await;
-                    } else {
-                        let response = CBasicStatus {
-                            session_id: packet.session_id,
-                            motd: CString::new(BASIC_CONFIG.motd.as_str())?,
-                            map: CString::new("world")?,
-                            num_players: server.get_player_count().await,
-                            max_players: BASIC_CONFIG.max_players as usize,
-                            host_port: bound_addr.port(),
-                            host_ip: CString::new(bound_addr.ip().to_string())?,
-                        };
-
-                        let _ = socket
-                            .send_to(response.encode().await.as_slice(), addr)
-                            .await;
-                    }
+                    handle_status(&packet, info_requester, addr, bound_addr, socket);
                 }
             }
         }
+    }
+    Ok(())
+}
+
+async fn handle_status(
+    packet: &SStatusRequest,
+    info_requester: Sender<NetResponse>,
+    addr: SocketAddr,
+    bound_addr: SocketAddr,
+    socket: Arc<UdpSocket>,
+) -> Result<(), NulError> {
+    let session_id = packet.session_id;
+    if packet.is_full_request {
+        tokio::spawn(async move {
+            let (tx, rx) = oneshot::channel();
+            info_requester.send(NetResponse::QueryFull(tx)).await;
+            if let Ok(resp) = rx.await {
+                let Ok(host_ip) = CString::new(bound_addr.ip().to_string()) else {
+                    return;
+                };
+                let response = CFullStatus {
+                    session_id,
+                    hostname: resp.basic.motd,
+                    version: resp.version,
+                    plugins: resp.plugins,
+                    map: resp.basic.map, // TODO: Get actual world name
+                    num_players: resp.basic.num_players,
+                    max_players: resp.basic.max_players,
+                    host_port: bound_addr.port(),
+                    host_ip,
+                    players: resp.players,
+                };
+                let _ = socket.send_to(response.encode().as_slice(), addr).await;
+            }
+        });
+    } else {
+        tokio::spawn(async move {
+            let (tx, rx) = oneshot::channel();
+            info_requester.send(NetResponse::QueryBasic(tx)).await;
+            if let Ok(resp) = rx.await {
+                let Ok(host_ip) = CString::new(bound_addr.ip().to_string()) else {
+                    return;
+                };
+                let response = CBasicStatus {
+                    session_id,
+                    motd: resp.motd,
+                    map: resp.map,
+                    num_players: resp.num_players,
+                    max_players: resp.max_players,
+                    host_port: bound_addr.port(),
+                    host_ip,
+                };
+                let _ = socket.send_to(response.encode().as_slice(), addr).await;
+            }
+        });
     }
     Ok(())
 }

@@ -1,4 +1,4 @@
-use async_trait::async_trait;
+
 use pumpkin_protocol::java::client::play::{ArgumentType, CommandSuggestion, SuggestionProviders};
 use pumpkin_util::math::position::BlockPos;
 use pumpkin_util::math::vector3::Vector3;
@@ -25,9 +25,9 @@ impl GetClientSideArgParser for BlockPosArgumentConsumer {
     }
 }
 
-#[async_trait]
+
 impl ArgumentConsumer for BlockPosArgumentConsumer {
-    async fn consume<'a>(
+    fn consume<'a>(
         &'a self,
         src: &CommandSender,
         _server: &'a Server,
@@ -40,7 +40,7 @@ impl ArgumentConsumer for BlockPosArgumentConsumer {
         Some(Arg::BlockPos(vec3))
     }
 
-    async fn suggest<'a>(
+    fn suggest<'a>(
         &'a self,
         _sender: &CommandSender,
         _server: &'a Server,

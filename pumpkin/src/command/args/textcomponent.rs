@@ -3,7 +3,7 @@ use crate::command::args::{Arg, ArgumentConsumer, FindArg, GetClientSideArgParse
 use crate::command::dispatcher::CommandError;
 use crate::command::tree::RawArgs;
 use crate::server::Server;
-use async_trait::async_trait;
+
 use pumpkin_protocol::java::client::play::{ArgumentType, CommandSuggestion, SuggestionProviders};
 use pumpkin_util::text::TextComponent;
 
@@ -19,9 +19,9 @@ impl GetClientSideArgParser for TextComponentArgConsumer {
     }
 }
 
-#[async_trait]
+
 impl ArgumentConsumer for TextComponentArgConsumer {
-    async fn consume<'a>(
+    fn consume<'a>(
         &'a self,
         _sender: &CommandSender,
         _server: &'a Server,
@@ -42,7 +42,7 @@ impl ArgumentConsumer for TextComponentArgConsumer {
         Some(Arg::TextComponent(text_component))
     }
 
-    async fn suggest<'a>(
+    fn suggest<'a>(
         &'a self,
         _sender: &CommandSender,
         _server: &'a Server,

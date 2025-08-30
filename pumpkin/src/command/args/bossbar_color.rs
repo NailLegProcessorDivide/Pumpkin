@@ -6,7 +6,7 @@ use crate::command::dispatcher::CommandError;
 use crate::command::tree::RawArgs;
 use crate::server::Server;
 use crate::world::bossbar::BossbarColor;
-use async_trait::async_trait;
+
 use pumpkin_protocol::java::client::play::{ArgumentType, CommandSuggestion, SuggestionProviders};
 
 pub struct BossbarColorArgumentConsumer;
@@ -22,9 +22,9 @@ impl GetClientSideArgParser for BossbarColorArgumentConsumer {
     }
 }
 
-#[async_trait]
+
 impl ArgumentConsumer for BossbarColorArgumentConsumer {
-    async fn consume<'a>(
+    fn consume<'a>(
         &'a self,
         _sender: &CommandSender,
         _server: &'a Server,
@@ -46,7 +46,7 @@ impl ArgumentConsumer for BossbarColorArgumentConsumer {
         color.map(Arg::BossbarColor)
     }
 
-    async fn suggest<'a>(
+    fn suggest<'a>(
         &'a self,
         _sender: &CommandSender,
         _server: &'a Server,

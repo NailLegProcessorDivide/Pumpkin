@@ -1,6 +1,5 @@
 use std::sync::atomic::Ordering;
 
-use async_trait::async_trait;
 use pumpkin_config::{BASIC_CONFIG, whitelist::WhitelistEntry};
 use pumpkin_util::text::TextComponent;
 
@@ -27,28 +26,26 @@ const NAMES: [&str; 1] = ["whitelist"];
 const DESCRIPTION: &str = "Manage server whitelists.";
 const ARG_TARGETS: &str = "targets";
 
-async fn kick_non_whitelisted_players(server: &Server) {
-    let whitelist = WHITELIST_CONFIG.read().await;
+fn kick_non_whitelisted_players(server: &Server) {
+    let whitelist = WHITELIST_CONFIG.read();
     if BASIC_CONFIG.enforce_whitelist && server.white_list.load(Ordering::Relaxed) {
-        for player in server.get_all_players().await {
+        for player in server.get_all_players() {
             if whitelist.is_whitelisted(&player.gameprofile) {
                 continue;
             }
-            player
-                .kick(
-                    DisconnectReason::Kicked,
-                    TextComponent::translate("multiplayer.disconnect.not_whitelisted", &[]),
-                )
-                .await;
+            player.kick(
+                DisconnectReason::Kicked,
+                TextComponent::translate("multiplayer.disconnect.not_whitelisted", &[]),
+            );
         }
     }
 }
 
 struct OnExecutor;
 
-#[async_trait]
+
 impl CommandExecutor for OnExecutor {
-    async fn execute<'a>(
+    fn execute<'a>(
         &self,
         sender: &mut CommandSender,
         server: &Server,
@@ -56,17 +53,13 @@ impl CommandExecutor for OnExecutor {
     ) -> Result<(), CommandError> {
         let previous = server.white_list.swap(true, Ordering::Relaxed);
         if previous {
-            sender
-                .send_message(TextComponent::translate(
-                    "commands.whitelist.alreadyOn",
-                    &[],
-                ))
-                .await;
+            sender.send_message(TextComponent::translate(
+                "commands.whitelist.alreadyOn",
+                &[],
+            ));
         } else {
-            kick_non_whitelisted_players(server).await;
-            sender
-                .send_message(TextComponent::translate("commands.whitelist.enabled", &[]))
-                .await;
+            kick_non_whitelisted_players(server);
+            sender.send_message(TextComponent::translate("commands.whitelist.enabled", &[]));
         }
         Ok(())
     }
@@ -74,9 +67,9 @@ impl CommandExecutor for OnExecutor {
 
 struct OffExecutor;
 
-#[async_trait]
+
 impl CommandExecutor for OffExecutor {
-    async fn execute<'a>(
+    fn execute<'a>(
         &self,
         sender: &mut CommandSender,
         server: &Server,
@@ -84,16 +77,12 @@ impl CommandExecutor for OffExecutor {
     ) -> Result<(), CommandError> {
         let previous = server.white_list.swap(false, Ordering::Relaxed);
         if previous {
-            sender
-                .send_message(TextComponent::translate("commands.whitelist.disabled", &[]))
-                .await;
+            sender.send_message(TextComponent::translate("commands.whitelist.disabled", &[]));
         } else {
-            sender
-                .send_message(TextComponent::translate(
-                    "commands.whitelist.alreadyOff",
-                    &[],
-                ))
-                .await;
+            sender.send_message(TextComponent::translate(
+                "commands.whitelist.alreadyOff",
+                &[],
+            ));
         }
         Ok(())
     }
@@ -101,19 +90,17 @@ impl CommandExecutor for OffExecutor {
 
 struct ListExecutor;
 
-#[async_trait]
+
 impl CommandExecutor for ListExecutor {
-    async fn execute<'a>(
+    fn execute<'a>(
         &self,
         sender: &mut CommandSender,
         _server: &Server,
         _args: &ConsumedArgs<'a>,
     ) -> Result<(), CommandError> {
-        let whitelist = &WHITELIST_CONFIG.read().await.whitelist;
+        let whitelist = &WHITELIST_CONFIG.read().whitelist;
         if whitelist.is_empty() {
-            sender
-                .send_message(TextComponent::translate("commands.whitelist.none", []))
-                .await;
+            sender.send_message(TextComponent::translate("commands.whitelist.none", []));
             return Ok(());
         }
 
@@ -123,15 +110,13 @@ impl CommandExecutor for ListExecutor {
             .collect::<Vec<&str>>()
             .join(", ");
 
-        sender
-            .send_message(TextComponent::translate(
-                "commands.whitelist.list",
-                [
-                    TextComponent::text(whitelist.len().to_string()),
-                    TextComponent::text(names),
-                ],
-            ))
-            .await;
+        sender.send_message(TextComponent::translate(
+            "commands.whitelist.list",
+            [
+                TextComponent::text(whitelist.len().to_string()),
+                TextComponent::text(names),
+            ],
+        ));
 
         Ok(())
     }
@@ -139,28 +124,26 @@ impl CommandExecutor for ListExecutor {
 
 struct ReloadExecutor;
 
-#[async_trait]
+
 impl CommandExecutor for ReloadExecutor {
-    async fn execute<'a>(
+    fn execute<'a>(
         &self,
         sender: &mut CommandSender,
         server: &Server,
         _args: &ConsumedArgs<'a>,
     ) -> Result<(), CommandError> {
-        *WHITELIST_CONFIG.write().await = WhitelistConfig::load();
-        kick_non_whitelisted_players(server).await;
-        sender
-            .send_message(TextComponent::translate("commands.whitelist.reloaded", &[]))
-            .await;
+        *WHITELIST_CONFIG.write() = WhitelistConfig::load();
+        kick_non_whitelisted_players(server);
+        sender.send_message(TextComponent::translate("commands.whitelist.reloaded", &[]));
         Ok(())
     }
 }
 
 pub struct AddExecutor;
 
-#[async_trait]
+
 impl CommandExecutor for AddExecutor {
-    async fn execute<'a>(
+    fn execute<'a>(
         &self,
         sender: &mut CommandSender,
         _server: &Server,
@@ -170,27 +153,23 @@ impl CommandExecutor for AddExecutor {
             return Err(CommandError::InvalidConsumption(Some(ARG_TARGETS.into())));
         };
 
-        let mut whitelist = WHITELIST_CONFIG.write().await;
+        let mut whitelist = WHITELIST_CONFIG.write();
         for player in targets {
             let profile = &player.gameprofile;
             if whitelist.is_whitelisted(profile) {
-                sender
-                    .send_message(TextComponent::translate(
-                        "commands.whitelist.add.failed",
-                        &[],
-                    ))
-                    .await;
+                sender.send_message(TextComponent::translate(
+                    "commands.whitelist.add.failed",
+                    &[],
+                ));
                 continue;
             }
             whitelist
                 .whitelist
                 .push(WhitelistEntry::new(profile.id, profile.name.clone()));
-            sender
-                .send_message(TextComponent::translate(
-                    "commands.whitelist.add.success",
-                    [TextComponent::text(profile.name.clone())],
-                ))
-                .await;
+            sender.send_message(TextComponent::translate(
+                "commands.whitelist.add.success",
+                [TextComponent::text(profile.name.clone())],
+            ));
         }
 
         whitelist.save();
@@ -200,9 +179,9 @@ impl CommandExecutor for AddExecutor {
 
 pub struct RemoveExecutor;
 
-#[async_trait]
+
 impl CommandExecutor for RemoveExecutor {
-    async fn execute<'a>(
+    fn execute<'a>(
         &self,
         sender: &mut CommandSender,
         server: &Server,
@@ -212,7 +191,7 @@ impl CommandExecutor for RemoveExecutor {
             return Err(CommandError::InvalidConsumption(Some(ARG_TARGETS.into())));
         };
 
-        let mut whitelist = WHITELIST_CONFIG.write().await;
+        let mut whitelist = WHITELIST_CONFIG.write();
         for player in targets {
             let i = whitelist
                 .whitelist
@@ -222,20 +201,16 @@ impl CommandExecutor for RemoveExecutor {
             match i {
                 Some(i) => {
                     whitelist.whitelist.remove(i);
-                    sender
-                        .send_message(TextComponent::translate(
-                            "commands.whitelist.remove.success",
-                            [player.get_display_name().await],
-                        ))
-                        .await;
+                    sender.send_message(TextComponent::translate(
+                        "commands.whitelist.remove.success",
+                        [player.get_display_name()],
+                    ));
                 }
                 None => {
-                    sender
-                        .send_message(TextComponent::translate(
-                            "commands.whitelist.remove.failed",
-                            [],
-                        ))
-                        .await;
+                    sender.send_message(TextComponent::translate(
+                        "commands.whitelist.remove.failed",
+                        [],
+                    ));
                 }
             }
         }
@@ -243,7 +218,7 @@ impl CommandExecutor for RemoveExecutor {
         whitelist.save();
         drop(whitelist);
 
-        kick_non_whitelisted_players(server).await;
+        kick_non_whitelisted_players(server);
         Ok(())
     }
 }

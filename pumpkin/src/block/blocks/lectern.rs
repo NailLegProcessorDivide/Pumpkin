@@ -1,5 +1,5 @@
 use crate::block::{BlockBehaviour, OnPlaceArgs};
-use async_trait::async_trait;
+
 use pumpkin_data::block_properties::{BlockProperties, LecternLikeProperties};
 use pumpkin_macros::pumpkin_block;
 use pumpkin_world::BlockStateId;
@@ -7,9 +7,8 @@ use pumpkin_world::BlockStateId;
 #[pumpkin_block("minecraft:lectern")]
 pub struct LecternBlock;
 
-#[async_trait]
 impl BlockBehaviour for LecternBlock {
-    async fn on_place(&self, args: OnPlaceArgs<'_>) -> BlockStateId {
+    fn on_place(&self, args: OnPlaceArgs<'_>) -> BlockStateId {
         let mut props = LecternLikeProperties::default(args.block);
         props.facing = args
             .player

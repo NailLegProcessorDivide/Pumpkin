@@ -104,7 +104,7 @@ impl CustomBossbars {
         None
     }
 
-    pub async fn remove_bossbar(
+    pub fn remove_bossbar(
         &mut self,
         server: &Server,
         resource_location: String,
@@ -113,7 +113,7 @@ impl CustomBossbars {
         if let Some(bossbar) = bossbar {
             self.custom_bossbars.remove(&resource_location);
 
-            let players: Vec<Arc<Player>> = server.get_all_players().await;
+            let players: Vec<Arc<Player>> = server.get_all_players();
 
             let online_players: Vec<&Arc<Player>> = players
                 .iter()
@@ -122,7 +122,7 @@ impl CustomBossbars {
 
             if bossbar.visible {
                 for player in online_players {
-                    player.remove_bossbar(bossbar.bossbar_data.uuid).await;
+                    player.remove_bossbar(bossbar.bossbar_data.uuid);
                 }
             }
 
@@ -138,7 +138,7 @@ impl CustomBossbars {
         self.custom_bossbars.contains_key(resource_location)
     }
 
-    pub async fn update_health(
+    pub fn update_health(
         &mut self,
         server: &Server,
         resource_location: String,
@@ -170,15 +170,14 @@ impl CustomBossbars {
                 return Ok(());
             }
 
-            let players: Vec<Arc<Player>> = server.get_all_players().await;
+            let players: Vec<Arc<Player>> = server.get_all_players();
             let matching_players: Vec<&Arc<Player>> = players
                 .iter()
                 .filter(|player| bossbar.player.contains(&player.gameprofile.id))
                 .collect();
             for player in matching_players {
                 player
-                    .update_bossbar_health(&bossbar.bossbar_data.uuid, bossbar.bossbar_data.health)
-                    .await;
+                    .update_bossbar_health(&bossbar.bossbar_data.uuid, bossbar.bossbar_data.health);
             }
 
             return Ok(());
@@ -188,7 +187,7 @@ impl CustomBossbars {
         ))
     }
 
-    pub async fn update_visibility(
+    pub fn update_visibility(
         &mut self,
         server: &Server,
         resource_location: String,
@@ -206,7 +205,7 @@ impl CustomBossbars {
 
             bossbar.visible = new_visibility;
 
-            let players: Vec<Arc<Player>> = server.get_all_players().await;
+            let players: Vec<Arc<Player>> = server.get_all_players();
             let online_players: Vec<&Arc<Player>> = players
                 .iter()
                 .filter(|player| bossbar.player.contains(&player.gameprofile.id))
@@ -214,9 +213,9 @@ impl CustomBossbars {
 
             for player in online_players {
                 if bossbar.visible {
-                    player.send_bossbar(&bossbar.bossbar_data).await;
+                    player.send_bossbar(&bossbar.bossbar_data);
                 } else {
-                    player.remove_bossbar(bossbar.bossbar_data.uuid).await;
+                    player.remove_bossbar(bossbar.bossbar_data.uuid);
                 }
             }
 
@@ -227,7 +226,7 @@ impl CustomBossbars {
         ))
     }
 
-    pub async fn update_name(
+    pub fn update_name(
         &mut self,
         server: &Server,
         resource_location: &str,
@@ -245,18 +244,16 @@ impl CustomBossbars {
                 return Ok(());
             }
 
-            let players: Vec<Arc<Player>> = server.get_all_players().await;
+            let players: Vec<Arc<Player>> = server.get_all_players();
             let matching_players: Vec<&Arc<Player>> = players
                 .iter()
                 .filter(|player| bossbar.player.contains(&player.gameprofile.id))
                 .collect();
             for player in matching_players {
-                player
-                    .update_bossbar_title(
-                        &bossbar.bossbar_data.uuid,
-                        bossbar.bossbar_data.title.clone(),
-                    )
-                    .await;
+                player.update_bossbar_title(
+                    &bossbar.bossbar_data.uuid,
+                    bossbar.bossbar_data.title.clone(),
+                );
             }
 
             return Ok(());
@@ -266,7 +263,7 @@ impl CustomBossbars {
         ))
     }
 
-    pub async fn update_color(
+    pub fn update_color(
         &mut self,
         server: &Server,
         resource_location: String,
@@ -284,19 +281,17 @@ impl CustomBossbars {
                 return Ok(());
             }
 
-            let players: Vec<Arc<Player>> = server.get_all_players().await;
+            let players: Vec<Arc<Player>> = server.get_all_players();
             let matching_players: Vec<&Arc<Player>> = players
                 .iter()
                 .filter(|player| bossbar.player.contains(&player.gameprofile.id))
                 .collect();
             for player in matching_players {
-                player
-                    .update_bossbar_style(
-                        &bossbar.bossbar_data.uuid,
-                        bossbar.bossbar_data.color.clone(),
-                        bossbar.bossbar_data.division.clone(),
-                    )
-                    .await;
+                player.update_bossbar_style(
+                    &bossbar.bossbar_data.uuid,
+                    bossbar.bossbar_data.color.clone(),
+                    bossbar.bossbar_data.division.clone(),
+                );
             }
 
             return Ok(());
@@ -306,7 +301,7 @@ impl CustomBossbars {
         ))
     }
 
-    pub async fn update_division(
+    pub fn update_division(
         &mut self,
         server: &Server,
         resource_location: String,
@@ -324,19 +319,17 @@ impl CustomBossbars {
                 return Ok(());
             }
 
-            let players: Vec<Arc<Player>> = server.get_all_players().await;
+            let players: Vec<Arc<Player>> = server.get_all_players();
             let matching_players: Vec<&Arc<Player>> = players
                 .iter()
                 .filter(|player| bossbar.player.contains(&player.gameprofile.id))
                 .collect();
             for player in matching_players {
-                player
-                    .update_bossbar_style(
-                        &bossbar.bossbar_data.uuid,
-                        bossbar.bossbar_data.color.clone(),
-                        bossbar.bossbar_data.division.clone(),
-                    )
-                    .await;
+                player.update_bossbar_style(
+                    &bossbar.bossbar_data.uuid,
+                    bossbar.bossbar_data.color.clone(),
+                    bossbar.bossbar_data.division.clone(),
+                );
             }
 
             return Ok(());
@@ -346,7 +339,7 @@ impl CustomBossbars {
         ))
     }
 
-    pub async fn update_players(
+    pub fn update_players(
         &mut self,
         server: &Server,
         resource_location: String,
@@ -374,11 +367,11 @@ impl CustomBossbars {
 
             if bossbar.visible {
                 for uuid in removed_players {
-                    let Some(player) = server.get_player_by_uuid(uuid).await else {
+                    let Some(player) = server.get_player_by_uuid(uuid) else {
                         continue;
                     };
 
-                    player.remove_bossbar(bossbar.bossbar_data.uuid).await;
+                    player.remove_bossbar(bossbar.bossbar_data.uuid);
                 }
             }
 
@@ -389,11 +382,11 @@ impl CustomBossbars {
             }
 
             for uuid in added_players {
-                let Some(player) = server.get_player_by_uuid(uuid).await else {
+                let Some(player) = server.get_player_by_uuid(uuid) else {
                     continue;
                 };
 
-                player.send_bossbar(&bossbar.bossbar_data).await;
+                player.send_bossbar(&bossbar.bossbar_data);
             }
 
             return Ok(());

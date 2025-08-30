@@ -7,7 +7,7 @@ use std::{
     },
 };
 
-use async_trait::async_trait;
+
 use pumpkin_data::{
     Block, HorizontalFacingExt,
     block_properties::{BlockProperties, ChestLikeProperties, ChestType},
@@ -17,7 +17,7 @@ use pumpkin_util::{
     math::{position::BlockPos, vector3::Vector3},
     random::{RandomImpl, get_seed, xoroshiro128::Xoroshiro},
 };
-use tokio::sync::Mutex;
+use parking_lot::Mutex;
 
 use crate::{
     block::viewer::{ViewerCountListener, ViewerCountTracker},
@@ -38,7 +38,6 @@ pub struct ChestBlockEntity {
     pub viewers: ViewerCountTracker,
 }
 
-#[async_trait]
 impl BlockEntity for ChestBlockEntity {
     fn resource_location(&self) -> &'static str {
         Self::ID
@@ -64,16 +63,15 @@ impl BlockEntity for ChestBlockEntity {
         chest
     }
 
-    async fn write_nbt(&self, nbt: &mut pumpkin_nbt::compound::NbtCompound) {
-        self.write_data(nbt, &self.items, true).await;
+    fn write_nbt(&self, nbt: &mut pumpkin_nbt::compound::NbtCompound) {
+        self.write_data(nbt, &self.items, true);
         // Safety precaution
-        //self.clear().await;
+        //self.clear();
     }
 
-    async fn tick(&self, world: Arc<dyn SimpleWorld>) {
+    fn tick(&self, world: Arc<dyn SimpleWorld>) {
         self.viewers
-            .update_viewer_count::<ChestBlockEntity>(self, world, &self.position)
-            .await;
+            .update_viewer_count::<ChestBlockEntity>(self, world, &self.position);
     }
 
     fn get_inventory(self: Arc<Self>) -> Option<Arc<dyn Inventory>> {
@@ -89,26 +87,23 @@ impl BlockEntity for ChestBlockEntity {
     }
 }
 
-#[async_trait]
 impl ViewerCountListener for ChestBlockEntity {
-    async fn on_container_open(&self, world: &Arc<dyn SimpleWorld>, _position: &BlockPos) {
-        self.play_sound(world, Sound::BlockChestOpen).await;
+    fn on_container_open(&self, world: &Arc<dyn SimpleWorld>, _position: &BlockPos) {
+        self.play_sound(world, Sound::BlockChestOpen);
     }
 
-    async fn on_container_close(&self, world: &Arc<dyn SimpleWorld>, _position: &BlockPos) {
-        self.play_sound(world, Sound::BlockChestClose).await;
+    fn on_container_close(&self, world: &Arc<dyn SimpleWorld>, _position: &BlockPos) {
+        self.play_sound(world, Sound::BlockChestClose);
     }
 
-    async fn on_viewer_count_update(
+    fn on_viewer_count_update(
         &self,
         world: &Arc<dyn SimpleWorld>,
         position: &BlockPos,
         _old: u16,
         new: u16,
     ) {
-        world
-            .add_synced_block_event(*position, Self::LID_ANIMATION_EVENT_TYPE, new as u8)
-            .await
+        world.add_synced_block_event(*position, Self::LID_ANIMATION_EVENT_TYPE, new as u8)
     }
 }
 
@@ -125,10 +120,10 @@ impl ChestBlockEntity {
         }
     }
 
-    async fn play_sound(&self, world: &Arc<dyn SimpleWorld>, sound: Sound) {
+    fn play_sound(&self, world: &Arc<dyn SimpleWorld>, sound: Sound) {
         let mut rng = Xoroshiro::from_seed(get_seed());
 
-        let state = world.get_block_state(&self.position).await;
+        let state = world.get_block_state(&self.position);
         let properties = ChestLikeProperties::from_state_id(state.id, &Block::CHEST);
         let position = match properties.r#type {
             ChestType::Left => return,
@@ -147,27 +142,24 @@ impl ChestBlockEntity {
             }
         };
 
-        world
-            .play_sound_fine(
-                sound,
-                SoundCategory::Blocks,
-                &position,
-                0.5,
-                rng.next_f32() * 0.1 + 0.9,
-            )
-            .await;
+        world.play_sound_fine(
+            sound,
+            SoundCategory::Blocks,
+            &position,
+            0.5,
+            rng.next_f32() * 0.1 + 0.9,
+        );
     }
 }
 
-#[async_trait]
 impl Inventory for ChestBlockEntity {
     fn size(&self) -> usize {
         self.items.len()
     }
 
-    async fn is_empty(&self) -> bool {
+    fn is_empty(&self) -> bool {
         for slot in self.items.iter() {
-            if !slot.lock().await.is_empty() {
+            if !slot.lock().is_empty() {
                 return false;
             }
         }
@@ -175,23 +167,23 @@ impl Inventory for ChestBlockEntity {
         true
     }
 
-    async fn get_stack(&self, slot: usize) -> Arc<Mutex<ItemStack>> {
+    fn get_stack(&self, slot: usize) -> Arc<Mutex<ItemStack>> {
         self.items[slot].clone()
     }
 
-    async fn remove_stack(&self, slot: usize) -> ItemStack {
+    fn remove_stack(&self, slot: usize) -> ItemStack {
         let mut removed = ItemStack::EMPTY.clone();
-        let mut guard = self.items[slot].lock().await;
+        let mut guard = self.items[slot].lock();
         std::mem::swap(&mut removed, &mut *guard);
         removed
     }
 
-    async fn remove_stack_specific(&self, slot: usize, amount: u8) -> ItemStack {
-        split_stack(&self.items, slot, amount).await
+    fn remove_stack_specific(&self, slot: usize, amount: u8) -> ItemStack {
+        split_stack(&self.items, slot, amount)
     }
 
-    async fn set_stack(&self, slot: usize, stack: ItemStack) {
-        *self.items[slot].lock().await = stack;
+    fn set_stack(&self, slot: usize, stack: ItemStack) {
+        *self.items[slot].lock() = stack;
     }
 
     fn on_open(&self) {
@@ -211,11 +203,10 @@ impl Inventory for ChestBlockEntity {
     }
 }
 
-#[async_trait]
 impl Clearable for ChestBlockEntity {
-    async fn clear(&self) {
+    fn clear(&self) {
         for slot in self.items.iter() {
-            *slot.lock().await = ItemStack::EMPTY.clone();
+            *slot.lock() = ItemStack::EMPTY.clone();
         }
     }
 }

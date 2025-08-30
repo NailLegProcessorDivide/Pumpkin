@@ -7,7 +7,7 @@ use crate::command::{
 };
 use crate::entity::NBTStorage;
 use CommandError::InvalidConsumption;
-use async_trait::async_trait;
+
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_nbt::tag::NbtTag;
 use pumpkin_util::text::TextComponent;
@@ -20,9 +20,9 @@ const ARG_ENTITY: &str = "entity";
 
 struct GetEntityDataExecutor;
 
-#[async_trait]
+
 impl CommandExecutor for GetEntityDataExecutor {
-    async fn execute<'a>(
+    fn execute<'a>(
         &self,
         sender: &mut CommandSender,
         _server: &crate::server::Server,
@@ -33,9 +33,7 @@ impl CommandExecutor for GetEntityDataExecutor {
         };
         let data_storage = entity.as_nbt_storage();
 
-        sender
-            .send_message(display_data(data_storage, entity.get_display_name().await).await?)
-            .await;
+        sender.send_message(display_data(data_storage, entity.get_display_name())?);
         Ok(())
     }
 }
@@ -217,12 +215,12 @@ pub fn snbt_colorful_display(tag: &NbtTag, depth: usize) -> Result<TextComponent
     }
 }
 
-async fn display_data(
+fn display_data(
     storage: &dyn NBTStorage,
     target_name: TextComponent,
 ) -> Result<TextComponent, CommandError> {
     let mut nbt = NbtCompound::new();
-    storage.write_nbt(&mut nbt).await;
+    storage.write_nbt(&mut nbt);
     let display = snbt_colorful_display(&NbtTag::Compound(nbt), 0)
         .map_err(|string| CommandError::CommandFailed(Box::new(TextComponent::text(string))))?;
     Ok(TextComponent::translate(

@@ -7,8 +7,8 @@ use std::sync::{
     },
 };
 
-use async_trait::async_trait;
 use crossbeam::atomic::AtomicCell;
+use parking_lot::Mutex;
 use pumpkin_data::damage::DamageType;
 use pumpkin_protocol::{
     codec::item_stack_seralizer::ItemStackSerializer,
@@ -16,7 +16,6 @@ use pumpkin_protocol::{
 };
 use pumpkin_util::math::vector3::Vector3;
 use pumpkin_world::item::ItemStack;
-use tokio::sync::Mutex;
 
 use crate::server::Server;
 
@@ -35,14 +34,12 @@ pub struct ItemEntity {
 }
 
 impl ItemEntity {
-    pub async fn new(entity: Entity, item_stack: ItemStack) -> Self {
-        entity
-            .set_velocity(Vector3::new(
-                rand::random::<f64>() * 0.2 - 0.1,
-                0.2,
-                rand::random::<f64>() * 0.2 - 0.1,
-            ))
-            .await;
+    pub fn new(entity: Entity, item_stack: ItemStack) -> Self {
+        entity.set_velocity(Vector3::new(
+            rand::random::<f64>() * 0.2 - 0.1,
+            0.2,
+            rand::random::<f64>() * 0.2 - 0.1,
+        ));
         entity.yaw.store(rand::random::<f32>() * 360.0);
         Self {
             entity,
@@ -55,13 +52,13 @@ impl ItemEntity {
         }
     }
 
-    pub async fn new_with_velocity(
+    pub fn new_with_velocity(
         entity: Entity,
         item_stack: ItemStack,
         velocity: Vector3<f64>,
         pickup_delay: u8,
     ) -> Self {
-        entity.set_velocity(velocity).await;
+        entity.set_velocity(velocity);
         entity.yaw.store(rand::random::<f32>() * 360.0);
         Self {
             entity,
@@ -74,18 +71,18 @@ impl ItemEntity {
         }
     }
 
-    async fn can_merge(&self) -> bool {
+    fn can_merge(&self) -> bool {
         if self.never_pickup.load(Ordering::Relaxed) || self.entity.removed.load(Ordering::Relaxed)
         {
             return false;
         }
 
-        let item_stack = self.item_stack.lock().await;
+        let item_stack = self.item_stack.lock();
 
         item_stack.item_count < item_stack.get_max_stack_size()
     }
 
-    async fn try_merge(&self) {
+    fn try_merge(&self) {
         let bounding_box = self.entity.bounding_box.load().expand(0.5, 0.0, 0.5);
 
         let items: Vec<_> = self
@@ -93,7 +90,6 @@ impl ItemEntity {
             .world
             .entities
             .read()
-            .await
             .values()
             .filter_map(|entity: &Arc<dyn EntityBase>| {
                 entity.clone().get_item_entity().filter(|item| {
@@ -105,8 +101,8 @@ impl ItemEntity {
             .collect();
 
         for item in items {
-            if item.can_merge().await {
-                self.try_merge_with(&item).await;
+            if item.can_merge() {
+                self.try_merge_with(&item);
 
                 if self.entity.removed.load(Ordering::SeqCst) {
                     break;
@@ -115,12 +111,12 @@ impl ItemEntity {
         }
     }
 
-    async fn try_merge_with(&self, other: &Self) {
+    fn try_merge_with(&self, other: &Self) {
         // Check if merge is possible
 
-        let self_stack = self.item_stack.lock().await;
+        let self_stack = self.item_stack.lock();
 
-        let other_stack = other.item_stack.lock().await;
+        let other_stack = other.item_stack.lock();
 
         if !self_stack.are_equal(&other_stack)
             || self_stack.item_count + other_stack.item_count > self_stack.get_max_stack_size()
@@ -171,36 +167,35 @@ impl ItemEntity {
         target.never_pickup.store(never_pickup, Ordering::Relaxed);
 
         if !never_pickup {
-            let mut target_delay = target.pickup_delay.lock().await;
+            let mut target_delay = target.pickup_delay.lock();
 
-            let delay = (*target_delay).max(*source.pickup_delay.lock().await);
+            let delay = (*target_delay).max(*source.pickup_delay.lock());
 
             *target_delay = delay;
         }
 
         if empty1 {
-            target.entity.remove().await;
+            target.entity.remove();
         } else {
-            target.init_data_tracker().await;
+            target.init_data_tracker();
         }
 
         if empty2 {
-            source.entity.remove().await;
+            source.entity.remove();
         } else {
-            source.init_data_tracker().await;
+            source.init_data_tracker();
         }
     }
 }
 
 impl NBTStorage for ItemEntity {}
 
-#[async_trait]
 impl EntityBase for ItemEntity {
-    async fn tick(&self, caller: Arc<dyn EntityBase>, server: &Server) {
+    fn tick(&self, caller: Arc<dyn EntityBase>, server: &Server) {
         let entity = &self.entity;
-        entity.tick(caller.clone(), server).await;
+        entity.tick(caller.clone(), server);
         {
-            let mut delay = self.pickup_delay.lock().await;
+            let mut delay = self.pickup_delay.lock();
             *delay = delay.saturating_sub(1);
         };
 
@@ -237,19 +232,16 @@ impl EntityBase for ItemEntity {
         let no_clip = !self
             .entity
             .world
-            .is_space_empty(bounding_box.expand(-1.0e-7, -1.0e-7, -1.0e-7))
-            .await;
+            .is_space_empty(bounding_box.expand(-1.0e-7, -1.0e-7, -1.0e-7));
 
         entity.no_clip.store(no_clip, Ordering::Relaxed);
 
         if no_clip {
-            entity
-                .push_out_of_blocks(Vector3::new(
-                    pos.x,
-                    f64::midpoint(bounding_box.min.y, bounding_box.max.y),
-                    pos.z,
-                ))
-                .await;
+            entity.push_out_of_blocks(Vector3::new(
+                pos.x,
+                f64::midpoint(bounding_box.min.y, bounding_box.max.y),
+                pos.z,
+            ));
         }
 
         let mut velo = entity.velocity.load(); // In case push_out_of_blocks modifies it
@@ -259,7 +251,7 @@ impl EntityBase for ItemEntity {
 
         if !tick_move {
             let Ok(item_age) = i32::try_from(self.item_age.load(Ordering::Relaxed)) else {
-                entity.remove().await;
+                entity.remove();
 
                 return;
             };
@@ -268,16 +260,16 @@ impl EntityBase for ItemEntity {
         }
 
         if tick_move {
-            entity.move_entity(caller.clone(), velo).await;
+            entity.move_entity(caller.clone(), velo);
 
-            entity.tick_block_collisions(&caller, server).await;
+            entity.tick_block_collisions(&caller, server);
 
             let mut friction = 0.98;
 
             let on_ground = entity.on_ground.load(Ordering::SeqCst);
 
             if on_ground {
-                let block_affecting_velo = entity.get_block_with_y_offset(0.999_999).await.1;
+                let block_affecting_velo = entity.get_block_with_y_offset(0.999_999).1;
 
                 friction *= f64::from(block_affecting_velo.slipperiness) * 0.98;
             }
@@ -295,7 +287,7 @@ impl EntityBase for ItemEntity {
             let age = self.item_age.fetch_add(1, Ordering::Relaxed) + 1;
 
             if age >= 6000 {
-                entity.remove().await;
+                entity.remove();
 
                 return;
             }
@@ -312,12 +304,12 @@ impl EntityBase for ItemEntity {
                 2
             };
 
-            if age.is_multiple_of(n) && self.can_merge().await {
-                self.try_merge().await;
+            if age.is_multiple_of(n) && self.can_merge() {
+                self.try_merge();
             }
         }
 
-        entity.update_fluid_state(&caller).await;
+        entity.update_fluid_state(&caller);
 
         let velocity_dirty = entity.velocity_dirty.swap(false, Ordering::SeqCst)
 
@@ -334,23 +326,21 @@ impl EntityBase for ItemEntity {
             || entity.velocity.load() != original_velo;
 
         if velocity_dirty {
-            entity.send_pos_rot().await;
+            entity.send_pos_rot();
 
-            entity.send_velocity().await;
+            entity.send_velocity();
         }
     }
 
-    async fn init_data_tracker(&self) {
-        self.entity
-            .send_meta_data(&[Metadata::new(
-                8,
-                MetaDataType::ItemStack,
-                &ItemStackSerializer::from(self.item_stack.lock().await.clone()),
-            )])
-            .await;
+    fn init_data_tracker(&self) {
+        self.entity.send_meta_data(&[Metadata::new(
+            8,
+            MetaDataType::ItemStack,
+            &ItemStackSerializer::from(self.item_stack.lock().clone()),
+        )]);
     }
 
-    async fn damage_with_context(
+    fn damage_with_context(
         &self,
         _caller: Arc<dyn EntityBase>,
         amount: f32,
@@ -362,23 +352,18 @@ impl EntityBase for ItemEntity {
         //TODO: invulnerability, e.g. ancient debris
         self.health.store(self.health.load() - amount);
         if self.health.load() <= 0.0 {
-            self.entity.remove().await;
+            self.entity.remove();
         }
         true
     }
 
-    async fn damage(
-        &self,
-        _caller: Arc<dyn EntityBase>,
-        _amount: f32,
-        _damage_type: DamageType,
-    ) -> bool {
+    fn damage(&self, _caller: Arc<dyn EntityBase>, _amount: f32, _damage_type: DamageType) -> bool {
         false
     }
 
-    async fn on_player_collision(&self, player: &Arc<Player>) {
+    fn on_player_collision(&self, player: &Arc<Player>) {
         let can_pickup = {
-            let delay = self.pickup_delay.lock().await;
+            let delay = self.pickup_delay.lock();
             *delay == 0
         };
 
@@ -386,32 +371,25 @@ impl EntityBase for ItemEntity {
             && player.living_entity.health.load() > 0.0
             && (player
                 .inventory
-                .insert_stack_anywhere(&mut *self.item_stack.lock().await)
-                .await
+                .insert_stack_anywhere(&mut *self.item_stack.lock())
                 || player.is_creative())
         {
-            player
-                .client
-                .enqueue_packet(&CTakeItemEntity::new(
-                    self.entity.entity_id.into(),
-                    player.entity_id().into(),
-                    self.item_stack.lock().await.item_count.into(),
-                ))
-                .await;
+            player.client.enqueue_packet(&CTakeItemEntity::new(
+                self.entity.entity_id.into(),
+                player.entity_id().into(),
+                self.item_stack.lock().item_count.into(),
+            ));
             player
                 .current_screen_handler
                 .lock()
-                .await
                 .lock()
-                .await
-                .send_content_updates()
-                .await;
+                .send_content_updates();
 
-            if self.item_stack.lock().await.is_empty() {
-                self.entity.remove().await;
+            if self.item_stack.lock().is_empty() {
+                self.entity.remove();
             } else {
                 // Update entity
-                self.init_data_tracker().await;
+                self.init_data_tracker();
             }
         }
     }

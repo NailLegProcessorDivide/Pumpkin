@@ -1,4 +1,4 @@
-use async_trait::async_trait;
+
 use pumpkin_world::BlockStateId;
 
 use crate::block::{
@@ -18,13 +18,13 @@ impl BlockMetadata for ShortPlantBlock {
     }
 }
 
-#[async_trait]
+
 impl BlockBehaviour for ShortPlantBlock {
-    async fn can_place_at(&self, args: CanPlaceAtArgs<'_>) -> bool {
-        <Self as PlantBlockBase>::can_place_at(self, args.block_accessor, args.position).await
+    fn can_place_at(&self, args: CanPlaceAtArgs<'_>) -> bool {
+        <Self as PlantBlockBase>::can_place_at(self, args.block_accessor, args.position)
     }
 
-    async fn get_state_for_neighbor_update(
+    fn get_state_for_neighbor_update(
         &self,
         args: GetStateForNeighborUpdateArgs<'_>,
     ) -> BlockStateId {
@@ -34,7 +34,7 @@ impl BlockBehaviour for ShortPlantBlock {
             args.position,
             args.state_id,
         )
-        .await
+
     }
 }
 

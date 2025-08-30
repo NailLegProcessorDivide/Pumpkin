@@ -3,7 +3,7 @@ use crate::command::args::{Arg, ArgumentConsumer, FindArg, GetClientSideArgParse
 use crate::command::dispatcher::CommandError;
 use crate::command::tree::RawArgs;
 use crate::server::Server;
-use async_trait::async_trait;
+
 use pumpkin_protocol::java::client::play::{ArgumentType, CommandSuggestion, SuggestionProviders};
 
 pub struct BoolArgConsumer;
@@ -18,9 +18,9 @@ impl GetClientSideArgParser for BoolArgConsumer {
     }
 }
 
-#[async_trait]
+
 impl ArgumentConsumer for BoolArgConsumer {
-    async fn consume<'a>(
+    fn consume<'a>(
         &'a self,
         _sender: &CommandSender,
         _server: &'a Server,
@@ -35,7 +35,7 @@ impl ArgumentConsumer for BoolArgConsumer {
         }
     }
 
-    async fn suggest<'a>(
+    fn suggest<'a>(
         &'a self,
         _sender: &CommandSender,
         _server: &'a Server,

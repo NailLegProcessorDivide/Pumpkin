@@ -7,7 +7,7 @@ use crate::command::tree::CommandTree;
 use crate::command::tree::builder::{argument, literal};
 use crate::command::{CommandError, CommandExecutor, CommandSender};
 
-use async_trait::async_trait;
+
 use pumpkin_data::Block;
 use pumpkin_util::math::position::BlockPos;
 use pumpkin_util::math::vector3::Vector3;
@@ -50,9 +50,9 @@ fn not_in_filter(filter: &BlockPredicate, old_block: &Block) -> bool {
 }
 
 #[expect(clippy::too_many_lines)]
-#[async_trait]
+
 impl CommandExecutor for Executor {
-    async fn execute<'a>(
+    fn execute<'a>(
         &self,
         sender: &mut CommandSender,
         _server: &crate::server::Server,
@@ -84,7 +84,7 @@ impl CommandExecutor for Executor {
                         for z in start_z..=end_z {
                             let block_position = BlockPos(Vector3::new(x, y, z));
                             if let Some(filter) = &option_filter
-                                && not_in_filter(filter, world.get_block(&block_position).await)
+                                && not_in_filter(filter, world.get_block(&block_position))
                             {
                                 continue;
                             }
@@ -94,14 +94,14 @@ impl CommandExecutor for Executor {
                                     None,
                                     BlockFlags::SKIP_DROPS | BlockFlags::FORCE_STATE,
                                 )
-                                .await;
+                                ;
                             world
                                 .set_block_state(
                                     &block_position,
                                     block_state_id,
                                     BlockFlags::FORCE_STATE,
                                 )
-                                .await;
+                                ;
                             placed_blocks += 1;
                             to_update.push(block_position);
                         }
@@ -114,7 +114,7 @@ impl CommandExecutor for Executor {
                         for z in start_z..=end_z {
                             let block_position = BlockPos(Vector3::new(x, y, z));
                             if let Some(filter) = &option_filter
-                                && not_in_filter(filter, world.get_block(&block_position).await)
+                                && not_in_filter(filter, world.get_block(&block_position))
                             {
                                 continue;
                             }
@@ -124,7 +124,7 @@ impl CommandExecutor for Executor {
                                     block_state_id,
                                     BlockFlags::FORCE_STATE,
                                 )
-                                .await;
+                                ;
                             placed_blocks += 1;
                             to_update.push(block_position);
                         }
@@ -136,10 +136,10 @@ impl CommandExecutor for Executor {
                     for y in start_y..=end_y {
                         for z in start_z..=end_z {
                             let block_position = BlockPos(Vector3::new(x, y, z));
-                            let old_state = world.get_block_state(&block_position).await;
+                            let old_state = world.get_block_state(&block_position);
                             if old_state.is_air() {
                                 if let Some(filter) = &option_filter
-                                    && not_in_filter(filter, world.get_block(&block_position).await)
+                                    && not_in_filter(filter, world.get_block(&block_position))
                                 {
                                     continue;
                                 }
@@ -149,7 +149,7 @@ impl CommandExecutor for Executor {
                                         block_state_id,
                                         BlockFlags::FORCE_STATE,
                                     )
-                                    .await;
+                                    ;
                                 placed_blocks += 1;
                                 to_update.push(block_position);
                             }
@@ -169,7 +169,7 @@ impl CommandExecutor for Executor {
                                 || z == start_z
                                 || z == end_z;
                             if let Some(filter) = &option_filter
-                                && not_in_filter(filter, world.get_block(&block_position).await)
+                                && not_in_filter(filter, world.get_block(&block_position))
                             {
                                 continue;
                             }
@@ -180,11 +180,11 @@ impl CommandExecutor for Executor {
                                         block_state_id,
                                         BlockFlags::FORCE_STATE,
                                     )
-                                    .await;
+                                    ;
                             } else {
                                 world
                                     .set_block_state(&block_position, 0, BlockFlags::FORCE_STATE)
-                                    .await;
+                                    ;
                             }
                             placed_blocks += 1;
                             to_update.push(block_position);
@@ -207,7 +207,7 @@ impl CommandExecutor for Executor {
                                 continue;
                             }
                             if let Some(filter) = &option_filter
-                                && not_in_filter(filter, world.get_block(&block_position).await)
+                                && not_in_filter(filter, world.get_block(&block_position))
                             {
                                 continue;
                             }
@@ -217,7 +217,7 @@ impl CommandExecutor for Executor {
                                     block_state_id,
                                     BlockFlags::FORCE_STATE,
                                 )
-                                .await;
+                                ;
                             placed_blocks += 1;
                             to_update.push(block_position);
                         }
@@ -230,7 +230,7 @@ impl CommandExecutor for Executor {
                         for z in start_z..=end_z {
                             let block_position = BlockPos(Vector3::new(x, y, z));
                             if let Some(filter) = &option_filter
-                                && not_in_filter(filter, world.get_block(&block_position).await)
+                                && not_in_filter(filter, world.get_block(&block_position))
                             {
                                 continue;
                             }
@@ -240,7 +240,7 @@ impl CommandExecutor for Executor {
                                     block_state_id,
                                     BlockFlags::SKIP_BLOCK_ADDED_CALLBACK,
                                 )
-                                .await;
+                                ;
                             placed_blocks += 1;
                         }
                     }
@@ -249,7 +249,7 @@ impl CommandExecutor for Executor {
         }
 
         for i in to_update {
-            world.update_neighbors(&i, None).await;
+            world.update_neighbors(&i, None);
         }
 
         sender
@@ -257,7 +257,7 @@ impl CommandExecutor for Executor {
                 "commands.fill.success",
                 [TextComponent::text(placed_blocks.to_string())],
             ))
-            .await;
+            ;
 
         Ok(())
     }

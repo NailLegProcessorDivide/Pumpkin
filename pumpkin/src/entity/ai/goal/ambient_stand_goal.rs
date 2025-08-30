@@ -1,6 +1,6 @@
 use super::{Goal, GoalControl};
 use crate::entity::mob::Mob;
-use async_trait::async_trait;
+
 use rand::Rng;
 use std::sync::atomic::AtomicI32;
 use std::sync::atomic::Ordering::Relaxed;
@@ -31,9 +31,9 @@ impl AmbientStandGoal {
     }
 }
 
-#[async_trait]
+
 impl Goal for AmbientStandGoal {
-    async fn can_start(&self, mob: &dyn Mob) -> bool {
+    fn can_start(&self, mob: &dyn Mob) -> bool {
         let cooldown = self.cooldown.fetch_add(1, Relaxed) + 1;
         if cooldown > 0 && mob.get_random().random_range(0..1000) < cooldown {
             self.reset_cooldown();
@@ -41,15 +41,15 @@ impl Goal for AmbientStandGoal {
 
         false
     }
-    async fn should_continue(&self, _mob: &dyn Mob) -> bool {
+    fn should_continue(&self, _mob: &dyn Mob) -> bool {
         false
     }
 
-    async fn start(&self, _mob: &dyn Mob) {}
+    fn start(&self, _mob: &dyn Mob) {}
 
-    async fn stop(&self, _mob: &dyn Mob) {}
+    fn stop(&self, _mob: &dyn Mob) {}
 
-    async fn tick(&self, _mob: &dyn Mob) {}
+    fn tick(&self, _mob: &dyn Mob) {}
 
     fn get_goal_control(&self) -> &GoalControl {
         &self.goal_control

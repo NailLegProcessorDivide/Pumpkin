@@ -1,4 +1,3 @@
-use async_trait::async_trait;
 use pumpkin_data::world::EMOTE_COMMAND;
 use pumpkin_util::text::TextComponent;
 
@@ -18,9 +17,9 @@ const ARG_MESSAGE: &str = "action";
 
 struct Executor;
 
-#[async_trait]
+
 impl CommandExecutor for Executor {
-    async fn execute<'a>(
+    fn execute<'a>(
         &self,
         sender: &mut CommandSender,
         server: &crate::server::Server,
@@ -30,14 +29,12 @@ impl CommandExecutor for Executor {
             return Err(InvalidConsumption(Some(ARG_MESSAGE.into())));
         };
 
-        server
-            .broadcast_message(
-                &TextComponent::text(msg.clone()),
-                &TextComponent::text(format!("{sender}")),
-                EMOTE_COMMAND,
-                None,
-            )
-            .await;
+        server.broadcast_message(
+            &TextComponent::text(msg.clone()),
+            &TextComponent::text(format!("{sender}")),
+            EMOTE_COMMAND,
+            None,
+        );
         Ok(())
     }
 }

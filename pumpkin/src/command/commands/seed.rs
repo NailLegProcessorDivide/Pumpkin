@@ -1,7 +1,7 @@
 use crate::command::{
     CommandError, CommandExecutor, CommandSender, args::ConsumedArgs, tree::CommandTree,
 };
-use async_trait::async_trait;
+
 use pumpkin_util::text::click::ClickEvent;
 use pumpkin_util::text::hover::HoverEvent;
 use pumpkin_util::text::{TextComponent, color::NamedColor};
@@ -13,9 +13,9 @@ const DESCRIPTION: &str = "Displays the world seed.";
 
 struct Executor;
 
-#[async_trait]
+
 impl CommandExecutor for Executor {
-    async fn execute<'a>(
+    fn execute<'a>(
         &self,
         sender: &mut CommandSender,
         server: &crate::server::Server,
@@ -24,7 +24,7 @@ impl CommandExecutor for Executor {
         let seed = match sender {
             CommandSender::Player(player) => player.living_entity.entity.world.level.seed.0,
             // TODO: Maybe ask player for world, or get the current world
-            _ => match server.worlds.read().await.first() {
+            _ => match server.worlds.read().first() {
                 Some(world) => world.level.seed.0,
                 None => {
                     return Err(CommandError::CommandFailed(Box::new(TextComponent::text(
@@ -35,20 +35,18 @@ impl CommandExecutor for Executor {
         };
         let seed = (seed as i64).to_string();
 
-        sender
-            .send_message(TextComponent::translate(
-                "commands.seed.success",
-                [TextComponent::text(seed.clone())
-                    .hover_event(HoverEvent::show_text(TextComponent::translate(
-                        Cow::from("chat.copy.click"),
-                        [],
-                    )))
-                    .click_event(ClickEvent::CopyToClipboard {
-                        value: Cow::from(seed),
-                    })
-                    .color_named(NamedColor::Green)],
-            ))
-            .await;
+        sender.send_message(TextComponent::translate(
+            "commands.seed.success",
+            [TextComponent::text(seed.clone())
+                .hover_event(HoverEvent::show_text(TextComponent::translate(
+                    Cow::from("chat.copy.click"),
+                    [],
+                )))
+                .click_event(ClickEvent::CopyToClipboard {
+                    value: Cow::from(seed),
+                })
+                .color_named(NamedColor::Green)],
+        ));
         Ok(())
     }
 }

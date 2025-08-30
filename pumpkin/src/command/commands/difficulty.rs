@@ -5,7 +5,6 @@ use crate::command::tree::builder::argument;
 use crate::command::{
     CommandError, CommandExecutor, CommandSender, args::ConsumedArgs, tree::CommandTree,
 };
-use async_trait::async_trait;
 
 use pumpkin_util::text::TextComponent;
 
@@ -16,9 +15,9 @@ const DESCRIPTION: &str = "Change the difficulty of the world.";
 pub const ARG_DIFFICULTY: &str = "difficulty";
 struct DifficultyExecutor;
 
-#[async_trait]
+
 impl CommandExecutor for DifficultyExecutor {
-    async fn execute<'a>(
+    fn execute<'a>(
         &self,
         sender: &mut CommandSender,
         server: &crate::server::Server,
@@ -32,27 +31,23 @@ impl CommandExecutor for DifficultyExecutor {
         let translation_key = format!("options.difficulty.{difficulty_string}");
 
         {
-            let level_info = server.level_info.read().await;
+            let level_info = server.level_info.read();
 
             if level_info.difficulty == difficulty {
-                sender
-                    .send_message(TextComponent::translate(
-                        "commands.difficulty.failure",
-                        [TextComponent::translate(translation_key, [])],
-                    ))
-                    .await;
+                sender.send_message(TextComponent::translate(
+                    "commands.difficulty.failure",
+                    [TextComponent::translate(translation_key, [])],
+                ));
                 return Ok(());
             }
         }
 
-        server.set_difficulty(difficulty, Some(true)).await;
+        server.set_difficulty(difficulty, Some(true));
 
-        sender
-            .send_message(TextComponent::translate(
-                "commands.difficulty.success",
-                [TextComponent::translate(translation_key, [])],
-            ))
-            .await;
+        sender.send_message(TextComponent::translate(
+            "commands.difficulty.success",
+            [TextComponent::translate(translation_key, [])],
+        ));
 
         Ok(())
     }

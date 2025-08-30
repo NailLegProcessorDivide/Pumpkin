@@ -3,7 +3,7 @@ use std::sync::{
     atomic::{AtomicU16, Ordering},
 };
 
-use async_trait::async_trait;
+
 use pumpkin_util::math::position::BlockPos;
 
 use crate::{block::entities::BlockEntity, inventory::Inventory, world::SimpleWorld};
@@ -36,7 +36,7 @@ impl ViewerCountTracker {
         self.current.fetch_sub(1, Ordering::Relaxed);
     }
 
-    pub async fn update_viewer_count<T>(
+    pub fn update_viewer_count<T>(
         &self,
         entity: &T,
         world: Arc<dyn SimpleWorld>,
@@ -49,32 +49,29 @@ impl ViewerCountTracker {
         if old != current {
             match (old, current) {
                 (n, 0) if n > 0 => {
-                    entity.on_container_close(&world, position).await;
+                    entity.on_container_close(&world, position);
                     // TODO: world.emitGameEvent(player, GameEvent.CONTAINER_CLOSE, pos);
                     // TODO: this.maxBlockInteractionRange = 0.0;
                 }
                 (0, n) if n > 0 => {
-                    entity.on_container_open(&world, position).await;
+                    entity.on_container_open(&world, position);
                     // TODO: world.emitGameEvent(player, GameEvent.CONTAINER_OPEN, pos);
                     // TODO: scheduleBlockTick(world, pos, state);
                 }
                 _ => {} // Ignore
             }
 
-            entity
-                .on_viewer_count_update(&world, position, old, current)
-                .await;
+            entity.on_viewer_count_update(&world, position, old, current);
         }
 
         // TODO: Requires players
     }
 }
 
-#[async_trait]
 pub trait ViewerCountListener {
-    async fn on_container_open(&self, _world: &Arc<dyn SimpleWorld>, _position: &BlockPos) {}
-    async fn on_container_close(&self, _world: &Arc<dyn SimpleWorld>, _position: &BlockPos) {}
-    async fn on_viewer_count_update(
+    fn on_container_open(&self, _world: &Arc<dyn SimpleWorld>, _position: &BlockPos) {}
+    fn on_container_close(&self, _world: &Arc<dyn SimpleWorld>, _position: &BlockPos) {}
+    fn on_viewer_count_update(
         &self,
         _world: &Arc<dyn SimpleWorld>,
         _position: &BlockPos,

@@ -1,4 +1,3 @@
-use async_trait::async_trait;
 use pumpkin_protocol::java::client::play::CClearTitle;
 use pumpkin_util::text::TextComponent;
 
@@ -27,9 +26,9 @@ const ARG_TITLE: &str = "title";
 /// bool: Whether to reset or not
 struct ClearOrResetExecutor(bool);
 
-#[async_trait]
+
 impl CommandExecutor for ClearOrResetExecutor {
-    async fn execute<'a>(
+    fn execute<'a>(
         &self,
         sender: &mut CommandSender,
         _server: &crate::server::Server,
@@ -41,25 +40,23 @@ impl CommandExecutor for ClearOrResetExecutor {
         let reset = self.0;
 
         for target in targets {
-            target.client.enqueue_packet(&CClearTitle::new(reset)).await;
+            target.client.enqueue_packet(&CClearTitle::new(reset));
         }
-        sender
-            .send_message(if targets.len() == 1 {
-                let text = if reset {
-                    "commands.title.reset.single"
-                } else {
-                    "commands.title.cleared.single"
-                };
-                TextComponent::translate(text, [targets[0].get_display_name().await])
+        sender.send_message(if targets.len() == 1 {
+            let text = if reset {
+                "commands.title.reset.single"
             } else {
-                let text = if reset {
-                    "commands.title.reset.multiple"
-                } else {
-                    "commands.title.cleared.multiple"
-                };
-                TextComponent::translate(text, [TextComponent::text(targets.len().to_string())])
-            })
-            .await;
+                "commands.title.cleared.single"
+            };
+            TextComponent::translate(text, [targets[0].get_display_name()])
+        } else {
+            let text = if reset {
+                "commands.title.reset.multiple"
+            } else {
+                "commands.title.cleared.multiple"
+            };
+            TextComponent::translate(text, [TextComponent::text(targets.len().to_string())])
+        });
 
         Ok(())
     }
@@ -67,9 +64,9 @@ impl CommandExecutor for ClearOrResetExecutor {
 
 struct TitleExecutor(TitleMode);
 
-#[async_trait]
+
 impl CommandExecutor for TitleExecutor {
-    async fn execute<'a>(
+    fn execute<'a>(
         &self,
         sender: &mut CommandSender,
         _server: &crate::server::Server,
@@ -84,23 +81,21 @@ impl CommandExecutor for TitleExecutor {
         let mode = &self.0;
 
         for target in targets {
-            target.show_title(&text, mode).await;
+            target.show_title(&text, mode);
         }
 
         let mode_name = format!("{mode:?}").to_lowercase();
-        sender
-            .send_message(if targets.len() == 1 {
-                TextComponent::translate(
-                    format!("commands.title.show.{mode_name}.single"),
-                    [targets[0].get_display_name().await],
-                )
-            } else {
-                TextComponent::translate(
-                    format!("commands.title.show.{mode_name}.multiple"),
-                    [TextComponent::text(targets.len().to_string())],
-                )
-            })
-            .await;
+        sender.send_message(if targets.len() == 1 {
+            TextComponent::translate(
+                format!("commands.title.show.{mode_name}.single"),
+                [targets[0].get_display_name()],
+            )
+        } else {
+            TextComponent::translate(
+                format!("commands.title.show.{mode_name}.multiple"),
+                [TextComponent::text(targets.len().to_string())],
+            )
+        });
 
         Ok(())
     }

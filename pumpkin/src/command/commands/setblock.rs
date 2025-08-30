@@ -1,4 +1,4 @@
-use async_trait::async_trait;
+
 use pumpkin_util::text::TextComponent;
 use pumpkin_world::world::BlockFlags;
 
@@ -30,9 +30,9 @@ enum Mode {
 
 struct Executor(Mode);
 
-#[async_trait]
+
 impl CommandExecutor for Executor {
-    async fn execute<'a>(
+    fn execute<'a>(
         &self,
         sender: &mut CommandSender,
         server: &crate::server::Server,
@@ -44,7 +44,7 @@ impl CommandExecutor for Executor {
         let mode = self.0;
         let world = match sender {
             CommandSender::Console | CommandSender::Rcon(_) => {
-                let guard = server.worlds.read().await;
+                let guard = server.worlds.read();
 
                 guard
                     .first()
@@ -58,14 +58,14 @@ impl CommandExecutor for Executor {
                 world
                     .clone()
                     .break_block(&pos, None, BlockFlags::SKIP_DROPS | BlockFlags::FORCE_STATE)
-                    .await;
+                    ;
                 world
                     .set_block_state(
                         &pos,
                         block_state_id,
                         BlockFlags::FORCE_STATE | BlockFlags::NOTIFY_NEIGHBORS,
                     )
-                    .await;
+                    ;
                 true
             }
             Mode::Replace => {
@@ -75,11 +75,11 @@ impl CommandExecutor for Executor {
                         block_state_id,
                         BlockFlags::FORCE_STATE | BlockFlags::NOTIFY_NEIGHBORS,
                     )
-                    .await;
+                    ;
                 true
             }
             Mode::Keep => {
-                let old_state = world.get_block_state(&pos).await;
+                let old_state = world.get_block_state(&pos);
                 if old_state.is_air() {
                     world
                         .set_block_state(
@@ -87,7 +87,7 @@ impl CommandExecutor for Executor {
                             block_state_id,
                             BlockFlags::FORCE_STATE | BlockFlags::NOTIFY_NEIGHBORS,
                         )
-                        .await;
+                        ;
                     true
                 } else {
                     false
@@ -108,7 +108,7 @@ impl CommandExecutor for Executor {
             } else {
                 TextComponent::translate("commands.setblock.failed", [])
             })
-            .await;
+            ;
 
         Ok(())
     }

@@ -3,7 +3,7 @@ use crate::block::CanPlaceAtArgs;
 use crate::block::GetStateForNeighborUpdateArgs;
 use crate::block::OnPlaceArgs;
 use crate::block::OnScheduledTickArgs;
-use async_trait::async_trait;
+
 use pumpkin_data::Block;
 use pumpkin_data::BlockDirection;
 use pumpkin_macros::pumpkin_block;
@@ -16,45 +16,41 @@ use pumpkin_world::world::BlockFlags;
 #[pumpkin_block("minecraft:dirt_path")]
 pub struct DirtPathBlock;
 
-#[async_trait]
 impl BlockBehaviour for DirtPathBlock {
-    async fn on_scheduled_tick(&self, args: OnScheduledTickArgs<'_>) {
+    fn on_scheduled_tick(&self, args: OnScheduledTickArgs<'_>) {
         // TODO: push up entities
-        args.world
-            .set_block_state(
-                args.position,
-                Block::DIRT.default_state.id,
-                BlockFlags::NOTIFY_ALL,
-            )
-            .await;
+        args.world.set_block_state(
+            args.position,
+            Block::DIRT.default_state.id,
+            BlockFlags::NOTIFY_ALL,
+        );
     }
 
-    async fn on_place(&self, args: OnPlaceArgs<'_>) -> BlockStateId {
-        if !can_place_at(args.world, args.position).await {
+    fn on_place(&self, args: OnPlaceArgs<'_>) -> BlockStateId {
+        if !can_place_at(args.world, args.position) {
             return Block::DIRT.default_state.id;
         }
 
         args.block.default_state.id
     }
 
-    async fn get_state_for_neighbor_update(
+    fn get_state_for_neighbor_update(
         &self,
         args: GetStateForNeighborUpdateArgs<'_>,
     ) -> BlockStateId {
-        if args.direction == BlockDirection::Up && !can_place_at(args.world, args.position).await {
+        if args.direction == BlockDirection::Up && !can_place_at(args.world, args.position) {
             args.world
-                .schedule_block_tick(args.block, *args.position, 1, TickPriority::Normal)
-                .await;
+                .schedule_block_tick(args.block, *args.position, 1, TickPriority::Normal);
         }
         args.state_id
     }
 
-    async fn can_place_at(&self, args: CanPlaceAtArgs<'_>) -> bool {
-        can_place_at(args.block_accessor, args.position).await
+    fn can_place_at(&self, args: CanPlaceAtArgs<'_>) -> bool {
+        can_place_at(args.block_accessor, args.position)
     }
 }
 
-async fn can_place_at(world: &dyn BlockAccessor, block_pos: &BlockPos) -> bool {
-    let state = world.get_block_state(&block_pos.up()).await;
+fn can_place_at(world: &dyn BlockAccessor, block_pos: &BlockPos) -> bool {
+    let state = world.get_block_state(&block_pos.up());
     !state.is_solid() // TODO: add fence gate block
 }

@@ -2,7 +2,7 @@ use core::f64;
 use std::fmt::{Display, Formatter};
 use std::str::FromStr;
 
-use async_trait::async_trait;
+
 use pumpkin_protocol::java::client::play::{ArgumentType, CommandSuggestion};
 use pumpkin_util::text::TextComponent;
 
@@ -21,12 +21,12 @@ pub struct BoundedNumArgumentConsumer<T: ToFromNumber> {
     name: Option<&'static str>,
 }
 
-#[async_trait]
+
 impl<T: ToFromNumber> ArgumentConsumer for BoundedNumArgumentConsumer<T>
 where
     Self: GetClientSideArgParser,
 {
-    async fn consume<'a>(
+    fn consume<'a>(
         &'a self,
         _src: &CommandSender,
         _server: &'a Server,
@@ -55,7 +55,7 @@ where
         Some(Arg::Num(Ok(x.to_number())))
     }
 
-    async fn suggest<'a>(
+    fn suggest<'a>(
         &'a self,
         _sender: &CommandSender,
         _server: &'a Server,

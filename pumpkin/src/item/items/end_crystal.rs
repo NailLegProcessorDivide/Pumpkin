@@ -5,7 +5,7 @@ use crate::entity::decoration::end_crystal::EndCrystalEntity;
 use crate::entity::player::Player;
 use crate::item::{ItemBehaviour, ItemMetadata};
 use crate::server::Server;
-use async_trait::async_trait;
+
 use pumpkin_data::entity::EntityType;
 use pumpkin_data::item::Item;
 use pumpkin_data::{Block, BlockDirection};
@@ -21,9 +21,9 @@ impl ItemMetadata for EndCrystalItem {
     }
 }
 
-#[async_trait]
+
 impl ItemBehaviour for EndCrystalItem {
-    async fn use_on_block(
+    fn use_on_block(
         &self,
         item: &mut ItemStack,
         player: &Player,
@@ -33,7 +33,7 @@ impl ItemBehaviour for EndCrystalItem {
         _server: &Server,
     ) {
         let world = player.world();
-        let block = world.get_block(&location).await;
+        let block = world.get_block(&location);
         if block != &Block::OBSIDIAN && block != &Block::BEDROCK {
             return;
         }
@@ -47,8 +47,8 @@ impl ItemBehaviour for EndCrystalItem {
             false,
         );
         let end_crystal = Arc::new(EndCrystalEntity::new(entity));
-        world.spawn_entity(end_crystal.clone()).await;
-        end_crystal.set_show_bottom(false).await;
+        world.spawn_entity(end_crystal.clone());
+        end_crystal.set_show_bottom(false);
         item.decrement_unless_creative(player.gamemode.load(), 1);
     }
 

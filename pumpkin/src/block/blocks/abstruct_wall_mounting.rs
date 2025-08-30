@@ -1,4 +1,3 @@
-use async_trait::async_trait;
 use pumpkin_data::{
     Block, BlockDirection,
     block_properties::{BlockFace, HorizontalFacing},
@@ -8,7 +7,6 @@ use pumpkin_world::{BlockStateId, world::BlockAccessor};
 
 use crate::{block::GetStateForNeighborUpdateArgs, entity::player::Player};
 
-#[async_trait]
 pub trait WallMountedBlock {
     fn get_direction(&self, state_id: BlockStateId, block: &Block) -> BlockDirection;
 
@@ -32,25 +30,23 @@ pub trait WallMountedBlock {
         (face, facing)
     }
 
-    async fn can_place_at(
+    fn can_place_at(
         &self,
         world: &dyn BlockAccessor,
         pos: &BlockPos,
         direction: BlockDirection,
     ) -> bool {
         let block_pos = pos.offset(direction.to_offset());
-        let block_state = world.get_block_state(&block_pos).await;
+        let block_state = world.get_block_state(&block_pos);
         block_state.is_side_solid(direction.opposite())
     }
 
-    async fn get_state_for_neighbor_update(
+    fn get_state_for_neighbor_update(
         &self,
         args: GetStateForNeighborUpdateArgs<'_>,
     ) -> BlockStateId {
         if self.get_direction(args.state_id, args.block).opposite() == args.direction
-            && !self
-                .can_place_at(args.world, args.position, args.direction)
-                .await
+            && !self.can_place_at(args.world, args.position, args.direction)
         {
             Block::AIR.default_state.id
         } else {

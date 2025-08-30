@@ -1,6 +1,7 @@
 use crate::entity::EntityBase;
 use crate::entity::r#type::from_type;
 use crate::world::World;
+use parking_lot::RwLock;
 use pumpkin_data::biome::Spawner;
 use pumpkin_data::entity::{EntityType, MobCategory, SpawnLocation};
 use pumpkin_data::tag::Block::MINECRAFT_PREVENT_MOB_SPAWNING_INSIDE;
@@ -21,7 +22,6 @@ use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 use std::fmt;
 use std::sync::Arc;
-use tokio::sync::RwLock;
 use uuid::Uuid;
 
 const MAGIC_NUMBER: i32 = 17 * 17;
@@ -71,7 +71,7 @@ impl LocalMobCapCalculator {
         dx * dx + dy * dy
     }
 
-    async fn get_players_near<'b>(
+    fn get_players_near<'b>(
         players_near_chunk: &'b mut HashMap<Vector2<i32>, Vec<i32>>,
         world: &Arc<World>,
         chunk_pos: &Vector2<i32>,
@@ -83,7 +83,7 @@ impl LocalMobCapCalculator {
             }
             Entry::Vacant(entry) => {
                 let mut players = Vec::new();
-                for (_uuid, player) in world.players.read().await.iter() {
+                for (_uuid, player) in world.players.read().iter() {
                     if player.gamemode.load() == GameMode::Spectator {
                         continue;
                     }
@@ -96,9 +96,8 @@ impl LocalMobCapCalculator {
             }
         }
     }
-    pub async fn add_mob(&mut self, chunk_pos: &Vector2<i32>, category: &'static MobCategory) {
-        let players =
-            Self::get_players_near(&mut self.players_near_chunk, &self.world, chunk_pos).await;
+    pub fn add_mob(&mut self, chunk_pos: &Vector2<i32>, category: &'static MobCategory) {
+        let players = Self::get_players_near(&mut self.players_near_chunk, &self.world, chunk_pos);
         for player in players {
             self.player_mob_counts
                 .entry(*player)
@@ -110,13 +109,8 @@ impl LocalMobCapCalculator {
         // debug!("chunk_pos {:?}", chunk_pos);
         // debug!("players {:?}", players);
     }
-    pub async fn can_spawn(
-        &mut self,
-        category: &'static MobCategory,
-        chunk_pos: &Vector2<i32>,
-    ) -> bool {
-        let players =
-            Self::get_players_near(&mut self.players_near_chunk, &self.world, chunk_pos).await;
+    pub fn can_spawn(&mut self, category: &'static MobCategory, chunk_pos: &Vector2<i32>) -> bool {
+        let players = Self::get_players_near(&mut self.players_near_chunk, &self.world, chunk_pos);
         for player in players {
             if let Some(count) = self.player_mob_counts.get(player) {
                 if count.can_spawn(category) {
@@ -187,7 +181,7 @@ impl fmt::Debug for SpawnState {
 }
 
 impl SpawnState {
-    pub async fn new(
+    pub fn new(
         chunk_count: i32,
         entities: &Arc<RwLock<HashMap<Uuid, Arc<dyn EntityBase>>>>,
         world: &Arc<World>,
@@ -195,7 +189,7 @@ impl SpawnState {
         let mut potential = PotentialCalculator::default();
         let mut local_mob_cap = LocalMobCapCalculator::new(world);
         let mut counter = MobCounts::default();
-        for entity in entities.read().await.values() {
+        for entity in entities.read().values() {
             let entity_type = &entity.get_entity().entity_type;
             #[allow(clippy::overly_complex_bool_expr)]
             if entity_type.mob && false || entity_type.category == &MobCategory::MISC {
@@ -203,14 +197,12 @@ impl SpawnState {
                 continue;
             }
             let entity_pos = &entity.get_entity().block_pos.load();
-            let biome = world.level.get_rough_biome(entity_pos).await;
+            let biome = world.level.get_rough_biome(entity_pos);
             if let Some(cost) = biome.spawn_costs.get(entity_type.resource_name) {
                 potential.add_charge(entity_pos, cost.charge);
             }
             if entity_type.mob {
-                local_mob_cap
-                    .add_mob(&entity.get_entity().chunk_pos.load(), entity_type.category)
-                    .await;
+                local_mob_cap.add_mob(&entity.get_entity().chunk_pos.load(), entity_type.category);
             }
             counter.add(entity_type.category);
         }
@@ -230,16 +222,14 @@ impl SpawnState {
         self.mob_category_counts.0[category.id]
             < category.max * self.spawnable_chunk_count / MAGIC_NUMBER
     }
-    async fn can_spawn_for_category_local(
+    fn can_spawn_for_category_local(
         &mut self,
         category: &'static MobCategory,
         chunk_pos: &Vector2<i32>,
     ) -> bool {
-        self.local_mob_cap_calculator
-            .can_spawn(category, chunk_pos)
-            .await
+        self.local_mob_cap_calculator.can_spawn(category, chunk_pos)
     }
-    async fn can_spawn(
+    fn can_spawn(
         &mut self,
         entity_type: &'static EntityType,
         pos: &BlockPos,
@@ -248,7 +238,7 @@ impl SpawnState {
         self.last_checked_pos = *pos;
         self.last_checked_type = entity_type;
         // TODO get biome
-        let biome = world.level.get_rough_biome(pos).await;
+        let biome = world.level.get_rough_biome(pos);
         if let Some(cost) = biome.spawn_costs.get(entity_type.resource_name) {
             self.last_charge = cost.charge;
             self.spawn_potential
@@ -259,7 +249,7 @@ impl SpawnState {
             true
         }
     }
-    async fn after_spawn(
+    fn after_spawn(
         &mut self,
         entity_type: &'static EntityType,
         pos: &BlockPos,
@@ -270,7 +260,7 @@ impl SpawnState {
             charge = self.last_charge;
         } else {
             // TODO get biome
-            let biome = world.level.get_rough_biome(pos).await;
+            let biome = world.level.get_rough_biome(pos);
             if let Some(cost) = biome.spawn_costs.get(entity_type.resource_name) {
                 charge = cost.charge;
             } else {
@@ -280,12 +270,10 @@ impl SpawnState {
 
         self.spawn_potential.add_charge(pos, charge);
         self.mob_category_counts.add(entity_type.category);
-        self.local_mob_cap_calculator
-            .add_mob(
-                &Vector2::<i32>::new(get_section_cord(pos.0.x), get_section_cord(pos.0.z)),
-                entity_type.category,
-            )
-            .await;
+        self.local_mob_cap_calculator.add_mob(
+            &Vector2::<i32>::new(get_section_cord(pos.0.x), get_section_cord(pos.0.z)),
+            entity_type.category,
+        );
     }
 }
 
@@ -309,7 +297,7 @@ pub fn get_filtered_spawning_categories(
     ret
 }
 
-pub async fn spawn_for_chunk(
+pub fn spawn_for_chunk(
     world: &Arc<World>,
     chunk_pos: &Vector2<i32>,
     chunk: &Arc<RwLock<ChunkData>>,
@@ -318,38 +306,32 @@ pub async fn spawn_for_chunk(
 ) {
     // debug!("spawn for chunk {:?}", chunk_pos);
     for category in spawn_list {
-        if spawn_state
-            .can_spawn_for_category_local(category, chunk_pos)
-            .await
-        {
-            let random_pos = get_random_pos_within(world.min_y, chunk_pos, chunk).await;
+        if spawn_state.can_spawn_for_category_local(category, chunk_pos) {
+            let random_pos = get_random_pos_within(world.min_y, chunk_pos, chunk);
             // debug!("try random pos: {:?}", random_pos);
             if random_pos.0.y > world.min_y {
-                spawn_category_for_position(category, world, random_pos, chunk_pos, spawn_state)
-                    .await;
+                spawn_category_for_position(category, world, random_pos, chunk_pos, spawn_state);
             }
         }
     }
 }
-pub async fn get_random_pos_within(
+pub fn get_random_pos_within(
     min_y: i32,
     chunk_pos: &Vector2<i32>,
     chunk: &Arc<RwLock<ChunkData>>,
 ) -> BlockPos {
     let x = (chunk_pos.x << 4) + rng().random_range(0..16);
     let z = (chunk_pos.y << 4) + rng().random_range(0..16);
-    let temp_y =
-        chunk
-            .read()
-            .await
-            .heightmap
-            .get_height(ChunkHeightmapType::WorldSurface, x, z, min_y)
-            + 1;
+    let temp_y = chunk
+        .read()
+        .heightmap
+        .get_height(ChunkHeightmapType::WorldSurface, x, z, min_y)
+        + 1;
     let y = rng().random_range(min_y..=temp_y);
     BlockPos::new(x, y, z)
 }
 
-pub async fn spawn_category_for_position(
+pub fn spawn_category_for_position(
     category: &'static MobCategory,
     world: &Arc<World>,
     pos: BlockPos,
@@ -372,7 +354,7 @@ pub async fn spawn_category_for_position(
             new_z += rng().random_range(0..6) - rng().random_range(0..6);
             new_pos = BlockPos::new(new_x, new_pos.0.y, new_z);
             let new_pos_center = new_pos.to_centered_f64();
-            let player_distance = get_nearest_player(&new_pos_center, world).await;
+            let player_distance = get_nearest_player(&new_pos_center, world);
             if player_distance == f64::MAX {
                 // debug!("player_distance infinity");
                 return;
@@ -387,7 +369,7 @@ pub async fn spawn_category_for_position(
                 inc += 1;
                 continue;
             }
-            let Some(spawner) = get_random_spawn_mob_at(world, category, &new_pos).await else {
+            let Some(spawner) = get_random_spawn_mob_at(world, category, &new_pos) else {
                 // debug!("{new_pos:?} failed, no random spawn mob at category: {category:?}");
                 break 'outer;
             };
@@ -400,19 +382,17 @@ pub async fn spawn_category_for_position(
                 category,
                 entity_type,
                 player_distance,
-            )
-            .await
-            {
+            ) {
                 // debug!("{new_pos:?} failed, not valid spawn position");
                 inc += 1;
                 continue;
             }
-            if !spawn_state.can_spawn(entity_type, &new_pos, world).await {
+            if !spawn_state.can_spawn(entity_type, &new_pos, world) {
                 // debug!("{new_pos:?} failed, can't spawn at");
                 inc += 1;
                 continue;
             }
-            let entity = from_type(entity_type, new_pos_center, world, Uuid::new_v4()).await;
+            let entity = from_type(entity_type, new_pos_center, world, Uuid::new_v4());
             entity
                 .get_entity()
                 .set_rotation(rng().random::<f32>() * 360., 0.);
@@ -420,8 +400,8 @@ pub async fn spawn_category_for_position(
             // TODO spawnGroupData = mob.finalizeSpawn(level, level.getCurrentDifficultyAt(mob.blockPosition()), EntitySpawnReason.NATURAL, spawnGroupData);
             spawn_cluster_size += 1;
             group_size += 1;
-            world.spawn_entity(entity).await;
-            spawn_state.after_spawn(entity_type, &new_pos, world).await;
+            world.spawn_entity(entity);
+            spawn_state.after_spawn(entity_type, &new_pos, world);
             if spawn_cluster_size >= entity_type.limit_per_chunk {
                 return;
             }
@@ -432,9 +412,9 @@ pub async fn spawn_category_for_position(
     }
 }
 
-pub async fn get_nearest_player(pos: &Vector3<f64>, world: &Arc<World>) -> f64 {
+pub fn get_nearest_player(pos: &Vector3<f64>, world: &Arc<World>) -> f64 {
     let mut dst = f64::MAX;
-    for (_uuid, player) in world.players.read().await.iter() {
+    for (_uuid, player) in world.players.read().iter() {
         if player.gamemode.load() == GameMode::Spectator {
             continue;
         }
@@ -466,13 +446,13 @@ pub fn is_right_distance_to_player_and_spawn_point(
 }
 
 #[must_use]
-pub async fn get_random_spawn_mob_at(
+pub fn get_random_spawn_mob_at(
     world: &Arc<World>,
     category: &'static MobCategory,
     block_pos: &BlockPos,
 ) -> Option<&'static Spawner> {
     // TODO Holder<Biome> holder = level.getBiome(pos);
-    let biome = world.level.get_rough_biome(block_pos).await;
+    let biome = world.level.get_rough_biome(block_pos);
     if category == &MobCategory::WATER_AMBIENT
         && biome.is_tagged_with_by_tag(&MINECRAFT_REDUCE_WATER_AMBIENT_SPAWNS)
         && rng().random::<f32>() < 0.98f32
@@ -498,7 +478,7 @@ pub async fn get_random_spawn_mob_at(
     }
 }
 
-pub async fn is_valid_spawn_position_for_type(
+pub fn is_valid_spawn_position_for_type(
     world: &Arc<World>,
     block_pos: &BlockPos,
     category: &'static MobCategory,
@@ -519,24 +499,22 @@ pub async fn is_valid_spawn_position_for_type(
     if !entity_type.summonable {
         return false;
     }
-    if !is_spawn_position_ok(world, block_pos, entity_type).await {
+    if !is_spawn_position_ok(world, block_pos, entity_type) {
         return false;
     }
     // TODO: we should use getSpawnBox, but this is only modified for slimes and magma slimes
-    world
-        .is_space_empty(BoundingBox::new_from_pos(
-            f64::from(block_pos.0.x) + 0.5,
-            f64::from(block_pos.0.y),
-            f64::from(block_pos.0.z) + 0.5,
-            &EntityDimensions {
-                width: entity_type.dimension[0],
-                height: entity_type.dimension[1],
-            },
-        ))
-        .await
+    world.is_space_empty(BoundingBox::new_from_pos(
+        f64::from(block_pos.0.x) + 0.5,
+        f64::from(block_pos.0.y),
+        f64::from(block_pos.0.z) + 0.5,
+        &EntityDimensions {
+            width: entity_type.dimension[0],
+            height: entity_type.dimension[1],
+        },
+    ))
 }
 
-pub async fn is_spawn_position_ok(
+pub fn is_spawn_position_ok(
     world: &Arc<World>,
     block_pos: &BlockPos,
     entity_type: &'static EntityType,
@@ -544,19 +522,17 @@ pub async fn is_spawn_position_ok(
     match entity_type.spawn_restriction.location {
         SpawnLocation::InLava => world
             .get_fluid(block_pos)
-            .await
             .is_tagged_with_by_tag(&MINECRAFT_LAVA),
         SpawnLocation::InWater => {
             // TODO !level.getBlockState(blockPos).isRedstoneConductor(level, blockPos)
             world
                 .get_fluid(block_pos)
-                .await
                 .is_tagged_with_by_tag(&MINECRAFT_WATER)
         }
         SpawnLocation::OnGround => {
-            let down = world.get_block_state(&block_pos.down()).await;
-            let up = world.get_block_state(&block_pos.up()).await;
-            let cur = world.get_block_state(block_pos).await;
+            let down = world.get_block_state(&block_pos.down());
+            let up = world.get_block_state(&block_pos.up());
+            let cur = world.get_block_state(block_pos);
             // TODO: blockState.allowsSpawning
             if down.is_side_solid(BlockDirection::Up) {
                 is_valid_empty_spawn_block(cur) && is_valid_empty_spawn_block(up)

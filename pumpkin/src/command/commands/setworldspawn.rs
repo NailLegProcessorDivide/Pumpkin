@@ -9,7 +9,7 @@ use crate::command::{
     tree::{CommandTree, builder::argument},
 };
 use crate::server::Server;
-use async_trait::async_trait;
+
 use pumpkin_registry::VanillaDimensionType;
 use pumpkin_util::{math::position::BlockPos, text::TextComponent};
 
@@ -23,16 +23,16 @@ const ARG_ANGLE: &str = "angle";
 
 struct NoArgsWorldSpawnExecutor;
 
-#[async_trait]
+
 impl CommandExecutor for NoArgsWorldSpawnExecutor {
-    async fn execute<'a>(
+    fn execute<'a>(
         &self,
         sender: &mut CommandSender,
         server: &crate::server::Server,
         _args: &ConsumedArgs<'a>,
     ) -> Result<(), CommandError> {
         let Some(block_pos) = sender.position() else {
-            let level_info_guard = server.level_info.read().await;
+            let level_info_guard = server.level_info.read();
             sender
                 .send_message(TextComponent::translate(
                     "commands.setworldspawn.success",
@@ -43,20 +43,20 @@ impl CommandExecutor for NoArgsWorldSpawnExecutor {
                         TextComponent::text(level_info_guard.spawn_angle.to_string()),
                     ],
                 ))
-                .await;
+                ;
 
             return Ok(());
         };
 
-        setworldspawn(sender, server, block_pos.to_block_pos(), 0.0).await
+        setworldspawn(sender, server, block_pos.to_block_pos(), 0.0)
     }
 }
 
 struct DefaultWorldSpawnExecutor;
 
-#[async_trait]
+
 impl CommandExecutor for DefaultWorldSpawnExecutor {
-    async fn execute<'a>(
+    fn execute<'a>(
         &self,
         sender: &mut CommandSender,
         server: &crate::server::Server,
@@ -66,15 +66,15 @@ impl CommandExecutor for DefaultWorldSpawnExecutor {
             return Err(InvalidConsumption(Some(ARG_BLOCK_POS.into())));
         };
 
-        setworldspawn(sender, server, *block_pos, 0.0).await
+        setworldspawn(sender, server, *block_pos, 0.0)
     }
 }
 
 struct AngleWorldSpawnExecutor;
 
-#[async_trait]
+
 impl CommandExecutor for AngleWorldSpawnExecutor {
-    async fn execute<'a>(
+    fn execute<'a>(
         &self,
         sender: &mut CommandSender,
         server: &Server,
@@ -88,11 +88,11 @@ impl CommandExecutor for AngleWorldSpawnExecutor {
             return Err(InvalidConsumption(Some(ARG_ANGLE.into())));
         };
 
-        setworldspawn(sender, server, *block_pos, *yaw).await
+        setworldspawn(sender, server, *block_pos, *yaw)
     }
 }
 
-async fn setworldspawn(
+fn setworldspawn(
     sender: &CommandSender,
     server: &Server,
     block_pos: BlockPos,
@@ -112,12 +112,12 @@ async fn setworldspawn(
                     "commands.setworldspawn.failure.not_overworld",
                     [],
                 ))
-                .await;
+                ;
             return Ok(());
         }
     }
 
-    let mut level_info_guard = server.level_info.write().await;
+    let mut level_info_guard = server.level_info.write();
     level_info_guard.spawn_x = block_pos.0.x;
     level_info_guard.spawn_y = block_pos.0.y;
     level_info_guard.spawn_z = block_pos.0.z;
@@ -136,7 +136,7 @@ async fn setworldspawn(
                 TextComponent::text(yaw.to_string()),
             ],
         ))
-        .await;
+        ;
 
     Ok(())
 }

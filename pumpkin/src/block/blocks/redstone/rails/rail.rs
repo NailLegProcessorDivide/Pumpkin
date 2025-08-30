@@ -1,4 +1,4 @@
-use async_trait::async_trait;
+
 use pumpkin_data::block_properties::HorizontalFacing;
 use pumpkin_data::block_properties::RailShape;
 use pumpkin_macros::pumpkin_block;
@@ -18,29 +18,22 @@ use super::{HorizontalFacingRailExt, Rail, RailElevation, RailProperties};
 #[pumpkin_block("minecraft:rail")]
 pub struct RailBlock;
 
-#[async_trait]
 impl BlockBehaviour for RailBlock {
-    async fn on_place(&self, args: OnPlaceArgs<'_>) -> BlockStateId {
+    fn on_place(&self, args: OnPlaceArgs<'_>) -> BlockStateId {
         let world = args.world;
         let block_pos = args.position;
         let mut rail_props = RailProperties::default(args.block);
         rail_props.set_waterlogged(args.replacing.water_source());
 
         let shape = if let Some(east_rail) =
-            Rail::find_if_unlocked(world, block_pos, HorizontalFacing::East).await
+            Rail::find_if_unlocked(world, block_pos, HorizontalFacing::East)
         {
-            if Rail::find_if_unlocked(world, block_pos, HorizontalFacing::South)
-                .await
-                .is_some()
-            {
+            if Rail::find_if_unlocked(world, block_pos, HorizontalFacing::South).is_some() {
                 RailShape::SouthEast
-            } else if Rail::find_if_unlocked(world, block_pos, HorizontalFacing::North)
-                .await
-                .is_some()
-            {
+            } else if Rail::find_if_unlocked(world, block_pos, HorizontalFacing::North).is_some() {
                 RailShape::NorthEast
             } else {
-                match Rail::find_if_unlocked(world, block_pos, HorizontalFacing::West).await {
+                match Rail::find_if_unlocked(world, block_pos, HorizontalFacing::West) {
                     Some(west_rail) if west_rail.elevation == RailElevation::Up => {
                         RailShape::AscendingWest
                     }
@@ -54,17 +47,14 @@ impl BlockBehaviour for RailBlock {
                 }
             }
         } else if let Some(south_rail) =
-            Rail::find_if_unlocked(world, block_pos, HorizontalFacing::South).await
+            Rail::find_if_unlocked(world, block_pos, HorizontalFacing::South)
         {
-            if Rail::find_if_unlocked(world, block_pos, HorizontalFacing::West)
-                .await
-                .is_some()
-            {
+            if Rail::find_if_unlocked(world, block_pos, HorizontalFacing::West).is_some() {
                 RailShape::SouthWest
             } else if south_rail.elevation == RailElevation::Up {
                 RailShape::AscendingSouth
             } else {
-                match Rail::find_if_unlocked(world, block_pos, HorizontalFacing::North).await {
+                match Rail::find_if_unlocked(world, block_pos, HorizontalFacing::North) {
                     Some(north_rail) if north_rail.elevation == RailElevation::Up => {
                         RailShape::AscendingNorth
                     }
@@ -72,12 +62,9 @@ impl BlockBehaviour for RailBlock {
                 }
             }
         } else if let Some(west_rail) =
-            Rail::find_if_unlocked(world, block_pos, HorizontalFacing::West).await
+            Rail::find_if_unlocked(world, block_pos, HorizontalFacing::West)
         {
-            if Rail::find_if_unlocked(world, block_pos, HorizontalFacing::North)
-                .await
-                .is_some()
-            {
+            if Rail::find_if_unlocked(world, block_pos, HorizontalFacing::North).is_some() {
                 RailShape::NorthWest
             } else if west_rail.elevation == RailElevation::Up {
                 RailShape::AscendingWest
@@ -85,7 +72,7 @@ impl BlockBehaviour for RailBlock {
                 RailShape::EastWest
             }
         } else if let Some(north_rail) =
-            Rail::find_if_unlocked(world, block_pos, HorizontalFacing::North).await
+            Rail::find_if_unlocked(world, block_pos, HorizontalFacing::North)
         {
             if north_rail.elevation == RailElevation::Up {
                 RailShape::AscendingNorth
@@ -105,20 +92,19 @@ impl BlockBehaviour for RailBlock {
         rail_props.to_state_id(args.block)
     }
 
-    async fn placed(&self, args: PlacedArgs<'_>) {
-        update_flanking_rails_shape(args.world, args.block, args.state_id, args.position).await;
+    fn placed(&self, args: PlacedArgs<'_>) {
+        update_flanking_rails_shape(args.world, args.block, args.state_id, args.position);
     }
 
-    async fn on_neighbor_update(&self, args: OnNeighborUpdateArgs<'_>) {
-        if !rail_placement_is_valid(args.world, args.block, args.position).await {
+    fn on_neighbor_update(&self, args: OnNeighborUpdateArgs<'_>) {
+        if !rail_placement_is_valid(args.world, args.block, args.position) {
             args.world
-                .break_block(args.position, None, BlockFlags::NOTIFY_ALL)
-                .await;
+                .break_block(args.position, None, BlockFlags::NOTIFY_ALL);
             return;
         }
     }
 
-    async fn can_place_at(&self, args: CanPlaceAtArgs<'_>) -> bool {
-        can_place_rail_at(args.block_accessor, args.position).await
+    fn can_place_at(&self, args: CanPlaceAtArgs<'_>) -> bool {
+        can_place_rail_at(args.block_accessor, args.position)
     }
 }

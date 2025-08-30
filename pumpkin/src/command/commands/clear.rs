@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use pumpkin_util::text::TextComponent;
 use pumpkin_util::text::color::NamedColor;
 use pumpkin_world::item::ItemStack;
@@ -19,18 +18,18 @@ const DESCRIPTION: &str = "Clear yours or targets inventory.";
 
 const ARG_TARGET: &str = "target";
 
-async fn clear_player(target: &Player) -> u64 {
+fn clear_player(target: &Player) -> u64 {
     let inventory = target.inventory();
     let mut count: u64 = 0;
     for slot in &inventory.main_inventory {
-        let mut slot_lock = slot.lock().await;
+        let mut slot_lock = slot.lock();
         count += u64::from(slot_lock.item_count);
         *slot_lock = ItemStack::EMPTY.clone();
     }
 
-    let entity_equipment_lock = inventory.entity_equipment.lock().await;
+    let entity_equipment_lock = inventory.entity_equipment.lock();
     for slot in entity_equipment_lock.equipment.values() {
-        let mut slot_lock = slot.lock().await;
+        let mut slot_lock = slot.lock();
         if slot_lock.is_empty() {
             continue;
         }
@@ -41,17 +40,17 @@ async fn clear_player(target: &Player) -> u64 {
     count
 }
 
-async fn clear_command_text_output(item_count: u64, targets: &[Arc<Player>]) -> TextComponent {
+fn clear_command_text_output(item_count: u64, targets: &[Arc<Player>]) -> TextComponent {
     match targets {
         [target] if item_count == 0 => {
-            TextComponent::translate("clear.failed.single", [target.get_display_name().await])
+            TextComponent::translate("clear.failed.single", [target.get_display_name()])
                 .color_named(NamedColor::Red)
         }
         [target] => TextComponent::translate(
             "commands.clear.success.single",
             [
                 TextComponent::text(item_count.to_string()),
-                target.get_display_name().await,
+                target.get_display_name(),
             ],
         ),
         targets if item_count == 0 => TextComponent::translate(
@@ -71,9 +70,9 @@ async fn clear_command_text_output(item_count: u64, targets: &[Arc<Player>]) -> 
 
 struct Executor;
 
-#[async_trait]
+
 impl CommandExecutor for Executor {
-    async fn execute<'a>(
+    fn execute<'a>(
         &self,
         sender: &mut CommandSender,
         _server: &crate::server::Server,
@@ -85,12 +84,12 @@ impl CommandExecutor for Executor {
 
         let mut item_count = 0;
         for target in targets {
-            item_count += clear_player(target).await;
+            item_count += clear_player(target);
         }
 
-        let msg = clear_command_text_output(item_count, targets).await;
+        let msg = clear_command_text_output(item_count, targets);
 
-        sender.send_message(msg).await;
+        sender.send_message(msg);
 
         Ok(())
     }
@@ -98,9 +97,9 @@ impl CommandExecutor for Executor {
 
 struct SelfExecutor;
 
-#[async_trait]
+
 impl CommandExecutor for SelfExecutor {
-    async fn execute<'a>(
+    fn execute<'a>(
         &self,
         sender: &mut CommandSender,
         _server: &crate::server::Server,
@@ -108,12 +107,12 @@ impl CommandExecutor for SelfExecutor {
     ) -> Result<(), CommandError> {
         let target = sender.as_player().ok_or(CommandError::InvalidRequirement)?;
 
-        let item_count = clear_player(&target).await;
+        let item_count = clear_player(&target);
 
         let hold_target = [target];
-        let msg = clear_command_text_output(item_count, &hold_target).await;
+        let msg = clear_command_text_output(item_count, &hold_target);
 
-        sender.send_message(msg).await;
+        sender.send_message(msg);
 
         Ok(())
     }

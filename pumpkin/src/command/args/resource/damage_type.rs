@@ -1,4 +1,4 @@
-use async_trait::async_trait;
+
 use pumpkin_data::damage::DamageType;
 use pumpkin_protocol::java::client::play::{ArgumentType, CommandSuggestion, SuggestionProviders};
 
@@ -27,9 +27,9 @@ impl GetClientSideArgParser for DamageTypeArgumentConsumer {
     }
 }
 
-#[async_trait]
+
 impl ArgumentConsumer for DamageTypeArgumentConsumer {
-    async fn consume<'a>(
+    fn consume<'a>(
         &'a self,
         _sender: &CommandSender,
         _server: &'a Server,
@@ -44,7 +44,7 @@ impl ArgumentConsumer for DamageTypeArgumentConsumer {
         Some(Arg::DamageType(damage_type))
     }
 
-    async fn suggest<'a>(
+    fn suggest<'a>(
         &'a self,
         _sender: &CommandSender,
         _server: &'a Server,

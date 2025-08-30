@@ -1,6 +1,5 @@
 use std::sync::atomic::Ordering;
 
-use async_trait::async_trait;
 use pumpkin_util::math::experience;
 use pumpkin_util::text::TextComponent;
 use pumpkin_util::text::color::{Color, NamedColor};
@@ -45,31 +44,27 @@ struct Executor {
 }
 
 impl Executor {
-    async fn handle_query(&self, sender: &CommandSender, target: &Player, exp_type: ExpType) {
+    fn handle_query(&self, sender: &CommandSender, target: &Player, exp_type: ExpType) {
         match exp_type {
             ExpType::Levels => {
                 let level = target.experience_level.load(Ordering::Relaxed);
-                sender
-                    .send_message(TextComponent::translate(
-                        "commands.experience.query.levels",
-                        [
-                            target.get_display_name().await,
-                            TextComponent::text(level.to_string()),
-                        ],
-                    ))
-                    .await;
+                sender.send_message(TextComponent::translate(
+                    "commands.experience.query.levels",
+                    [
+                        target.get_display_name(),
+                        TextComponent::text(level.to_string()),
+                    ],
+                ));
             }
             ExpType::Points => {
                 let points = target.experience_points.load(Ordering::Relaxed);
-                sender
-                    .send_message(TextComponent::translate(
-                        "commands.experience.query.points",
-                        [
-                            target.get_display_name().await,
-                            TextComponent::text(points.to_string()),
-                        ],
-                    ))
-                    .await;
+                sender.send_message(TextComponent::translate(
+                    "commands.experience.query.points",
+                    [
+                        target.get_display_name(),
+                        TextComponent::text(points.to_string()),
+                    ],
+                ));
             }
         }
     }
@@ -162,7 +157,7 @@ impl Executor {
         }
     }
 
-    async fn handle_modify(
+    fn handle_modify(
         &self,
         target: &Player,
         amount: i32,
@@ -172,14 +167,14 @@ impl Executor {
         match exp_type {
             ExpType::Levels => {
                 if mode == Mode::Add {
-                    target.add_experience_levels(amount).await;
+                    target.add_experience_levels(amount);
                 } else {
-                    target.set_experience_level(amount, true).await;
+                    target.set_experience_level(amount, true);
                 }
             }
             ExpType::Points => {
                 if mode == Mode::Add {
-                    target.add_experience_points(amount).await;
+                    target.add_experience_points(amount);
                 } else {
                     let current_level = target.experience_level.load(Ordering::Relaxed);
                     let current_max_points = experience::points_in_level(current_level);
@@ -188,7 +183,7 @@ impl Executor {
                         return Err("commands.experience.set.points.invalid");
                     }
 
-                    target.set_experience_points(amount).await;
+                    target.set_experience_points(amount);
                 }
             }
         }
@@ -196,9 +191,9 @@ impl Executor {
     }
 }
 
-#[async_trait]
+
 impl CommandExecutor for Executor {
-    async fn execute<'a>(
+    fn execute<'a>(
         &self,
         sender: &mut CommandSender,
         _server: &crate::server::Server,
@@ -212,53 +207,43 @@ impl CommandExecutor for Executor {
                     // TODO: Add proper error message for multiple players in query mode
                     return Ok(());
                 }
-                self.handle_query(sender, &targets[0], self.exp_type.unwrap())
-                    .await;
+                self.handle_query(sender, &targets[0], self.exp_type.unwrap());
             }
             Mode::Add | Mode::Set => {
                 let Ok(amount) = BoundedNumArgumentConsumer::<i32>::find_arg(args, ARG_AMOUNT)?
                 else {
-                    sender
-                        .send_message(TextComponent::translate(
-                            "commands.experience.set.points.invalid",
-                            [],
-                        ))
-                        .await;
+                    sender.send_message(TextComponent::translate(
+                        "commands.experience.set.points.invalid",
+                        [],
+                    ));
                     return Ok(());
                 };
 
                 if self.mode == Mode::Set && amount < 0 {
-                    sender
-                        .send_message(TextComponent::translate(
-                            "commands.experience.set.points.invalid",
-                            [],
-                        ))
-                        .await;
+                    sender.send_message(TextComponent::translate(
+                        "commands.experience.set.points.invalid",
+                        [],
+                    ));
                     return Ok(());
                 }
 
                 for target in targets {
-                    match self
-                        .handle_modify(target, amount, self.exp_type.unwrap(), self.mode)
-                        .await
-                    {
+                    match self.handle_modify(target, amount, self.exp_type.unwrap(), self.mode) {
                         Ok(()) => {
                             let msg = Self::get_success_message(
                                 self.mode,
                                 self.exp_type.unwrap(),
                                 amount,
                                 targets.len(),
-                                Some(target.get_display_name().await),
+                                Some(target.get_display_name()),
                             );
-                            sender.send_message(msg).await;
+                            sender.send_message(msg);
                         }
                         Err(error_msg) => {
-                            sender
-                                .send_message(
-                                    TextComponent::translate(error_msg, [])
-                                        .color(Color::Named(NamedColor::Red)),
-                                )
-                                .await;
+                            sender.send_message(
+                                TextComponent::translate(error_msg, [])
+                                    .color(Color::Named(NamedColor::Red)),
+                            );
                         }
                     }
                 }

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use async_trait::async_trait;
+
 use crossbeam::atomic::AtomicCell;
 use pumpkin_data::{Block, BlockDirection, BlockState};
 use pumpkin_nbt::compound::NbtCompound;
@@ -23,11 +23,11 @@ pub struct PistonBlockEntity {
 impl PistonBlockEntity {
     pub const ID: &'static str = "minecraft:piston";
 
-    pub async fn finish(&self, world: Arc<dyn SimpleWorld>) {
+    pub fn finish(&self, world: Arc<dyn SimpleWorld>) {
         if self.last_progress.load() < 1.0 {
             let pos = self.position;
-            world.remove_block_entity(&pos).await;
-            if world.get_block(&pos).await == &Block::MOVING_PISTON {
+            world.remove_block_entity(&pos);
+            if world.get_block(&pos) == &Block::MOVING_PISTON {
                 let state = if self.source {
                     Block::AIR.default_state.id
                 } else {
@@ -36,10 +36,10 @@ impl PistonBlockEntity {
                 world
                     .clone()
                     .set_block_state(&pos, state, BlockFlags::NOTIFY_ALL)
-                    .await;
+                    ;
                 world
                     .update_neighbor(&pos, Block::from_state_id(state))
-                    .await;
+                    ;
             }
         }
     }
@@ -50,7 +50,6 @@ const LAST_PROGRESS: &str = "progress";
 const EXTENDING: &str = "extending";
 const SOURCE: &str = "source";
 
-#[async_trait]
 impl BlockEntity for PistonBlockEntity {
     fn resource_location(&self) -> &'static str {
         Self::ID
@@ -60,13 +59,13 @@ impl BlockEntity for PistonBlockEntity {
         self.position
     }
 
-    async fn tick(&self, world: Arc<dyn SimpleWorld>) {
+    fn tick(&self, world: Arc<dyn SimpleWorld>) {
         let current_progress = self.current_progress.load();
         self.last_progress.store(current_progress);
         if current_progress >= 1.0 {
             let pos = self.position;
-            world.remove_block_entity(&pos).await;
-            if world.get_block(&pos).await == &Block::MOVING_PISTON {
+            world.remove_block_entity(&pos);
+            if world.get_block(&pos) == &Block::MOVING_PISTON {
                 if self.pushed_block_state.is_air() {
                     world
                         .clone()
@@ -75,7 +74,7 @@ impl BlockEntity for PistonBlockEntity {
                             self.pushed_block_state.id,
                             BlockFlags::FORCE_STATE | BlockFlags::MOVED,
                         )
-                        .await;
+                        ;
                 } else {
                     world
                         .clone()
@@ -84,11 +83,11 @@ impl BlockEntity for PistonBlockEntity {
                             self.pushed_block_state.id,
                             BlockFlags::NOTIFY_ALL | BlockFlags::MOVED,
                         )
-                        .await;
+                        ;
                     world
                         .clone()
                         .update_neighbor(&pos, Block::from_state_id(self.pushed_block_state.id))
-                        .await;
+                        ;
                 }
             }
         }
@@ -119,7 +118,7 @@ impl BlockEntity for PistonBlockEntity {
         }
     }
 
-    async fn write_nbt(&self, nbt: &mut pumpkin_nbt::compound::NbtCompound) {
+    fn write_nbt(&self, nbt: &mut pumpkin_nbt::compound::NbtCompound) {
         // TODO: pushed_block_state
         nbt.put_byte(FACING, self.facing.to_index() as i8);
         nbt.put_float(LAST_PROGRESS, self.last_progress.load());

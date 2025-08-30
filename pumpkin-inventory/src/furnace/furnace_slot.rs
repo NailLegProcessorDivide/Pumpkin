@@ -1,6 +1,6 @@
 use std::sync::{Arc, atomic::AtomicU8};
 
-use async_trait::async_trait;
+
 use pumpkin_data::{fuels::is_fuel, item::Item};
 use pumpkin_world::inventory::Inventory;
 
@@ -31,7 +31,7 @@ impl FurnaceSlot {
         }
     }
 }
-#[async_trait]
+
 impl Slot for FurnaceSlot {
     fn get_inventory(&self) -> Arc<dyn Inventory> {
         self.inventory.clone()
@@ -46,11 +46,11 @@ impl Slot for FurnaceSlot {
             .store(id as u8, std::sync::atomic::Ordering::Relaxed);
     }
 
-    async fn mark_dirty(&self) {
+    fn mark_dirty(&self) {
         self.inventory.mark_dirty();
     }
 
-    async fn can_insert(&self, stack: &pumpkin_world::item::ItemStack) -> bool {
+    fn can_insert(&self, stack: &pumpkin_world::item::ItemStack) -> bool {
         match self.slot_type {
             FurnaceSlotType::Top => true,
             FurnaceSlotType::Bottom => is_fuel(stack.item.id) || stack.item.id == Item::BUCKET.id,

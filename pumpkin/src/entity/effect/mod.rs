@@ -1,12 +1,12 @@
 use crate::entity::{NBTStorage, NBTStorageInit};
-use async_trait::async_trait;
+
 use pumpkin_data::effect::StatusEffect;
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_nbt::tag::NbtTag;
 
-#[async_trait]
+
 impl NBTStorage for pumpkin_data::potion::Effect {
-    async fn write_nbt(&self, nbt: &mut NbtCompound) {
+    fn write_nbt(&self, nbt: &mut NbtCompound) {
         nbt.put("id", self.effect_type.minecraft_name);
         if self.amplifier > 0 {
             nbt.put("amplifier", NbtTag::Int(i32::from(self.amplifier)));
@@ -23,9 +23,9 @@ impl NBTStorage for pumpkin_data::potion::Effect {
     }
 }
 
-#[async_trait]
+
 impl NBTStorageInit for pumpkin_data::potion::Effect {
-    async fn create_from_nbt(nbt: &mut NbtCompound) -> Option<Self> {
+    fn create_from_nbt(nbt: &mut NbtCompound) -> Option<Self> {
         let Some(effect_id) = nbt.get_string("id") else {
             log::warn!("Unable to read effect. Effect id is not present");
             return None;

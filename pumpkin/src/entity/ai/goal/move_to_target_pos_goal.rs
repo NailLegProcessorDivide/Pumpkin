@@ -1,7 +1,7 @@
 use super::{Control, Goal, GoalControl, to_goal_ticks};
 use crate::entity::mob::Mob;
 use crate::world::World;
-use async_trait::async_trait;
+
 use crossbeam::atomic::AtomicCell;
 use pumpkin_util::math::position::BlockPos;
 use pumpkin_util::math::vector3::Vector3;
@@ -66,7 +66,7 @@ impl MoveToTargetPosGoal {
         to_goal_ticks(MIN_INTERVAL + mob.get_random().random_range(0..MIN_INTERVAL))
     }
 
-    pub async fn find_target_pos(&self, mob: &dyn Mob) -> bool {
+    pub fn find_target_pos(&self, mob: &dyn Mob) -> bool {
         let block_pos = mob.get_entity().block_pos.load();
         let mut block_pos_mutable = BlockPos::new(0, 0, 0);
 
@@ -84,7 +84,7 @@ impl MoveToTargetPosGoal {
                         {
                             let world = &mob.get_entity().world;
                             let can_target = if let Some(x) = self.move_to_target_pos.upgrade() {
-                                x.is_target_pos(world.clone(), block_pos_mutable).await
+                                x.is_target_pos(world.clone(), block_pos_mutable)
                             } else {
                                 false
                             };
@@ -123,30 +123,30 @@ impl MoveToTargetPosGoal {
 }
 
 // Contains overridable functions
-#[async_trait]
+
 pub trait MoveToTargetPos: Send + Sync {
-    async fn is_target_pos(&self, world: Arc<World>, block_pos: BlockPos) -> bool;
+    fn is_target_pos(&self, world: Arc<World>, block_pos: BlockPos) -> bool;
 
     fn get_desired_distance_to_target(&self) -> f64 {
         1.0
     }
 }
 
-#[async_trait]
+
 impl Goal for MoveToTargetPosGoal {
-    async fn can_start(&self, mob: &dyn Mob) -> bool {
+    fn can_start(&self, mob: &dyn Mob) -> bool {
         if self.cooldown.load(Relaxed) > 0 {
             self.cooldown.fetch_sub(1, Relaxed);
             return false;
         }
         self.cooldown.store(Self::get_interval(mob), Relaxed);
-        self.find_target_pos(mob).await
+        self.find_target_pos(mob)
     }
 
-    async fn should_continue(&self, mob: &dyn Mob) -> bool {
+    fn should_continue(&self, mob: &dyn Mob) -> bool {
         let world = &mob.get_entity().world;
         let can_target = if let Some(x) = self.move_to_target_pos.upgrade() {
-            x.is_target_pos(world.clone(), self.target_pos.load()).await
+            x.is_target_pos(world.clone(), self.target_pos.load())
         } else {
             false
         };
@@ -155,7 +155,7 @@ impl Goal for MoveToTargetPosGoal {
             && can_target
     }
 
-    async fn start(&self, mob: &dyn Mob) {
+    fn start(&self, mob: &dyn Mob) {
         Self::start_moving_to_target(mob);
         self.trying_time.store(0, Relaxed);
         let random = mob.get_random().random_range(0..MIN_WAITING_TIME);
@@ -165,9 +165,9 @@ impl Goal for MoveToTargetPosGoal {
         );
     }
 
-    async fn stop(&self, _mob: &dyn Mob) {}
+    fn stop(&self, _mob: &dyn Mob) {}
 
-    async fn tick(&self, mob: &dyn Mob) {
+    fn tick(&self, mob: &dyn Mob) {
         let block_pos = self.get_target_pos();
         let block_pos: Vector3<f64> = block_pos.0.to_f64();
         let Some(move_to_target_pos) = self.move_to_target_pos.upgrade() else {

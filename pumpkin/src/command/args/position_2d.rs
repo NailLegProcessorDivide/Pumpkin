@@ -1,4 +1,4 @@
-use async_trait::async_trait;
+
 use pumpkin_protocol::java::client::play::{ArgumentType, CommandSuggestion, SuggestionProviders};
 use pumpkin_util::math::vector2::Vector2;
 use pumpkin_util::math::vector3::Vector3;
@@ -27,9 +27,9 @@ impl GetClientSideArgParser for Position2DArgumentConsumer {
     }
 }
 
-#[async_trait]
+
 impl ArgumentConsumer for Position2DArgumentConsumer {
-    async fn consume<'a>(
+    fn consume<'a>(
         &'a self,
         src: &CommandSender,
         _server: &'a Server,
@@ -42,7 +42,7 @@ impl ArgumentConsumer for Position2DArgumentConsumer {
         Some(Arg::Pos2D(vec2))
     }
 
-    async fn suggest<'a>(
+    fn suggest<'a>(
         &'a self,
         _sender: &CommandSender,
         _server: &'a Server,

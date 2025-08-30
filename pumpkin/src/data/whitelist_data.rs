@@ -7,8 +7,8 @@ use crate::net::GameProfile;
 
 use super::{LoadJSONConfiguration, SaveJSONConfiguration};
 
-pub static WHITELIST_CONFIG: LazyLock<tokio::sync::RwLock<WhitelistConfig>> =
-    LazyLock::new(|| tokio::sync::RwLock::new(WhitelistConfig::load()));
+pub static WHITELIST_CONFIG: LazyLock<parking_lot::RwLock<WhitelistConfig>> =
+    LazyLock::new(|| parking_lot::RwLock::new(WhitelistConfig::load()));
 
 #[derive(Deserialize, Serialize, Default)]
 #[serde(transparent)]

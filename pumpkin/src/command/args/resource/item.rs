@@ -1,4 +1,4 @@
-use async_trait::async_trait;
+
 use pumpkin_data::item::Item;
 use pumpkin_protocol::java::client::play::{ArgumentType, CommandSuggestion, SuggestionProviders};
 use pumpkin_util::text::TextComponent;
@@ -26,9 +26,9 @@ impl GetClientSideArgParser for ItemArgumentConsumer {
     }
 }
 
-#[async_trait]
+
 impl ArgumentConsumer for ItemArgumentConsumer {
-    async fn consume<'a>(
+    fn consume<'a>(
         &'a self,
         _sender: &CommandSender,
         _server: &'a Server,
@@ -38,7 +38,7 @@ impl ArgumentConsumer for ItemArgumentConsumer {
         Some(Arg::Item(args.pop()?))
     }
 
-    async fn suggest<'a>(
+    fn suggest<'a>(
         &'a self,
         _sender: &CommandSender,
         _server: &'a Server,

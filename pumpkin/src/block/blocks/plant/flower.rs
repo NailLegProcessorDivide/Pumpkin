@@ -1,4 +1,4 @@
-use async_trait::async_trait;
+
 use pumpkin_data::Block;
 use pumpkin_data::tag::{RegistryKey, get_tag_values};
 use pumpkin_registry::VanillaDimensionType;
@@ -22,13 +22,12 @@ impl BlockMetadata for FlowerBlock {
     }
 }
 
-#[async_trait]
 impl BlockBehaviour for FlowerBlock {
-    async fn can_place_at(&self, args: CanPlaceAtArgs<'_>) -> bool {
-        <Self as PlantBlockBase>::can_place_at(self, args.block_accessor, args.position).await
+    fn can_place_at(&self, args: CanPlaceAtArgs<'_>) -> bool {
+        <Self as PlantBlockBase>::can_place_at(self, args.block_accessor, args.position)
     }
 
-    async fn get_state_for_neighbor_update(
+    fn get_state_for_neighbor_update(
         &self,
         args: GetStateForNeighborUpdateArgs<'_>,
     ) -> BlockStateId {
@@ -38,10 +37,9 @@ impl BlockBehaviour for FlowerBlock {
             args.position,
             args.state_id,
         )
-        .await
     }
 
-    async fn random_tick(&self, args: RandomTickArgs<'_>) {
+    fn random_tick(&self, args: RandomTickArgs<'_>) {
         //TODO add trail particule
         if (args
             .world
@@ -52,26 +50,22 @@ impl BlockBehaviour for FlowerBlock {
                 .dimension_type
                 .eq(&VanillaDimensionType::OverworldCaves))
             && args.block.eq(&Block::CLOSED_EYEBLOSSOM)
-            && args.world.level_time.lock().await.time_of_day % 24000 > 14500
+            && args.world.level_time.lock().time_of_day % 24000 > 14500
         {
-            args.world
-                .set_block_state(
-                    args.position,
-                    Block::OPEN_EYEBLOSSOM.default_state.id,
-                    BlockFlags::NOTIFY_ALL,
-                )
-                .await;
+            args.world.set_block_state(
+                args.position,
+                Block::OPEN_EYEBLOSSOM.default_state.id,
+                BlockFlags::NOTIFY_ALL,
+            );
         }
         if args.block.eq(&Block::OPEN_EYEBLOSSOM)
-            && args.world.level_time.lock().await.time_of_day % 24000 <= 14500
+            && args.world.level_time.lock().time_of_day % 24000 <= 14500
         {
-            args.world
-                .set_block_state(
-                    args.position,
-                    Block::CLOSED_EYEBLOSSOM.default_state.id,
-                    BlockFlags::NOTIFY_ALL,
-                )
-                .await;
+            args.world.set_block_state(
+                args.position,
+                Block::CLOSED_EYEBLOSSOM.default_state.id,
+                BlockFlags::NOTIFY_ALL,
+            );
         }
     }
 }

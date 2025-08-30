@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use async_trait::async_trait;
+
 use pumpkin_protocol::java::client::play::{ArgumentType, CommandSuggestion, SuggestionProviders};
 
 use crate::command::CommandSender;
@@ -28,9 +28,9 @@ impl GetClientSideArgParser for PlayersArgumentConsumer {
     }
 }
 
-#[async_trait]
+
 impl ArgumentConsumer for PlayersArgumentConsumer {
-    async fn consume<'a>(
+    fn consume<'a>(
         &'a self,
         src: &CommandSender,
         server: &'a Server,
@@ -51,16 +51,16 @@ impl ArgumentConsumer for PlayersArgumentConsumer {
                 _ => None,
             },
             "@r" => {
-                (server.get_random_player().await).map_or_else(|| Some(vec![]), |p| Some(vec![p]))
+                (server.get_random_player()).map_or_else(|| Some(vec![]), |p| Some(vec![p]))
             }
-            "@a" | "@e" => Some(server.get_all_players().await),
-            name => server.get_player_by_name(name).await.map(|p| vec![p]),
+            "@a" | "@e" => Some(server.get_all_players()),
+            name => server.get_player_by_name(name).map(|p| vec![p]),
         };
 
         players.map(Arg::Players)
     }
 
-    async fn suggest<'a>(
+    fn suggest<'a>(
         &'a self,
         _sender: &CommandSender,
         _server: &'a Server,

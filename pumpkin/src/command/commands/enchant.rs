@@ -1,4 +1,3 @@
-use async_trait::async_trait;
 use pumpkin_util::text::TextComponent;
 
 use crate::command::args::bounded_num::{BoundedNumArgumentConsumer, NotInBounds};
@@ -15,10 +14,10 @@ const DESCRIPTION: &str = "Adds an enchantment to a player's selected item, subj
 
 struct Executor;
 
-#[async_trait]
+
 impl CommandExecutor for Executor {
     #[allow(clippy::too_many_lines)]
-    async fn execute<'a>(
+    fn execute<'a>(
         &self,
         sender: &mut CommandSender,
         _server: &crate::server::Server,
@@ -70,24 +69,24 @@ impl CommandExecutor for Executor {
             //     if only_one {
             //         let msg = TextComponent::translate(
             //             "commands.enchant.failed.entity",
-            //             [targets[0].get_display_name().await],
+            //             [targets[0].get_display_name()],
             //         );
-            //         sender.send_message(msg).await;
+            //         sender.send_message(msg);
             //         return Ok(());
             //     }
             //     continue;
             // };
-            // let lock = target.entity_equipment.lock().await.get(&EquipmentSlot::MAIN_HAND); TODO this dont work
+            // let lock = target.entity_equipment.lock().get(&EquipmentSlot::MAIN_HAND); TODO this dont work
             let Some(player) = target.get_player() else {
                 todo!()
             };
             let lock = player.inventory.held_item();
-            let mut item = lock.lock().await;
+            let mut item = lock.lock();
             if item.is_empty() {
                 if only_one {
                     let msg = TextComponent::translate(
                         "commands.enchant.failed.itemless",
-                        [targets[0].get_display_name().await],
+                        [targets[0].get_display_name()],
                     );
                     return Err(CommandError::CommandFailed(Box::new(msg)));
                 }
@@ -128,10 +127,10 @@ impl CommandExecutor for Executor {
                 "commands.enchant.success.single",
                 [
                     enchantment.get_fullname(level),
-                    targets[0].get_display_name().await,
+                    targets[0].get_display_name(),
                 ],
             );
-            sender.send_message(msg).await;
+            sender.send_message(msg);
         } else {
             let msg = TextComponent::translate(
                 "commands.enchant.success.multiple",
@@ -140,7 +139,7 @@ impl CommandExecutor for Executor {
                     TextComponent::text(targets.len().to_string()),
                 ],
             );
-            sender.send_message(msg).await;
+            sender.send_message(msg);
         }
         Ok(())
     }

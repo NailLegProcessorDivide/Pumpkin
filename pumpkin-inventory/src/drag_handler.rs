@@ -6,7 +6,7 @@ impl DragHandler {
     pub fn new() -> Self {
         Self(RwLock::new(HashMap::new()))
     }
-    pub async fn new_drag(
+    pub fn new_drag(
         &self,
         container_id: u64,
         player: i32,
@@ -17,21 +17,21 @@ impl DragHandler {
             drag_type,
             slots: vec![],
         };
-        let mut drags = self.0.write().await;
+        let mut drags = self.0.write();
         drags.insert(container_id, Arc::new(Mutex::new(drag)));
         Ok(())
     }
 
-    pub async fn add_slot(
+    pub fn add_slot(
         &self,
         container_id: u64,
         player: i32,
         slot: usize,
     ) -> Result<(), InventoryError> {
-        let drags = self.0.read().await;
+        let drags = self.0.read();
         match drags.get(&container_id) {
             Some(drag) => {
-                let mut drag = drag.lock().await;
+                let mut drag = drag.lock();
                 if drag.player != player {
                     Err(InventoryError::MultiplePlayersDragging)?
                 }
@@ -44,7 +44,7 @@ impl DragHandler {
         Ok(())
     }
 
-    pub async fn apply_drag<T: Container>(
+    pub fn apply_drag<T: Container>(
         &self,
         maybe_carried_item: &mut Option<ItemStack>,
         container: &mut T,
@@ -56,11 +56,11 @@ impl DragHandler {
             return Ok(());
         }
 
-        let mut drags = self.0.write().await;
+        let mut drags = self.0.write();
         let Some((_, drag)) = drags.remove_entry(container_id) else {
             Err(InventoryError::OutOfOrderDragging)?
         };
-        let drag = drag.lock().await;
+        let drag = drag.lock();
 
         if player != drag.player {
             Err(InventoryError::MultiplePlayersDragging)?

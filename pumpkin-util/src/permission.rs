@@ -1,7 +1,7 @@
+use parking_lot::RwLock;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::RwLock;
 
 /// Describes the default behavior for permissions
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -147,17 +147,17 @@ impl PermissionManager {
     }
 
     /// Check if a player has a permission, considering defaults and op status
-    pub async fn has_permission(
+    pub fn has_permission(
         &self,
         player_id: &uuid::Uuid,
         permission_node: &str,
         player_op_level: PermissionLvl,
     ) -> bool {
-        let reg = self.registry.read().await;
+        let reg = self.registry.read();
 
         // Check explicitly set permissions
         if let Some(attachment) = self.attachments.get(player_id) {
-            let attachment = attachment.read().await;
+            let attachment = attachment.read();
 
             // Check for exact permission match
             if let Some(value) = attachment.has_permission_set(permission_node) {

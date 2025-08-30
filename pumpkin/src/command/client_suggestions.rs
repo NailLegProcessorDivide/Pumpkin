@@ -9,7 +9,7 @@ use super::{
     tree::{Node, NodeType},
 };
 
-pub async fn send_c_commands_packet(player: &Arc<Player>, dispatcher: &CommandDispatcher) {
+pub fn send_c_commands_packet(player: &Arc<Player>, dispatcher: &CommandDispatcher) {
     let cmd_src = super::CommandSender::Player(player.clone());
     let mut first_level = Vec::new();
 
@@ -22,7 +22,7 @@ pub async fn send_c_commands_packet(player: &Arc<Player>, dispatcher: &CommandDi
             continue;
         };
 
-        if !cmd_src.has_permission(permission.as_str()).await {
+        if !cmd_src.has_permission(permission.as_str()) {
             continue;
         }
 
@@ -49,7 +49,7 @@ pub async fn send_c_commands_packet(player: &Arc<Player>, dispatcher: &CommandDi
     let root_node_index = root.build(&mut proto_nodes);
 
     let packet = CCommands::new(proto_nodes.into(), root_node_index.try_into().unwrap());
-    player.client.enqueue_packet(&packet).await;
+    player.client.enqueue_packet(&packet);
 }
 
 #[derive(Debug)]

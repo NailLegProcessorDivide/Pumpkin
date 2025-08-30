@@ -13,20 +13,19 @@ use pumpkin_world::cylindrical_chunk_iterator::Cylindrical;
 
 use crate::{entity::player::Player, net::ClientPlatform};
 
-pub async fn get_view_distance(player: &Player) -> NonZeroU8 {
+pub fn get_view_distance(player: &Player) -> NonZeroU8 {
     player
         .config
         .read()
-        .await
         .view_distance
         .clamp(NonZeroU8::new(2).unwrap(), BASIC_CONFIG.view_distance)
 }
 
-pub async fn update_position(player: &Arc<Player>) {
+pub fn update_position(player: &Arc<Player>) {
     let entity = &player.living_entity.entity;
     let pos = entity.pos.load();
 
-    let view_distance = get_view_distance(player).await;
+    let view_distance = get_view_distance(player);
     let new_chunk_center = entity.chunk_pos.load();
 
     let old_cylindrical = player.watched_section.load();
@@ -35,20 +34,16 @@ pub async fn update_position(player: &Arc<Player>) {
     if old_cylindrical != new_cylindrical {
         match player.client.as_ref() {
             ClientPlatform::Java(client) => {
-                client
-                    .send_packet_now(&CCenterChunk {
-                        chunk_x: new_chunk_center.x.into(),
-                        chunk_z: new_chunk_center.y.into(),
-                    })
-                    .await;
+                client.send_packet_now(&CCenterChunk {
+                    chunk_x: new_chunk_center.x.into(),
+                    chunk_z: new_chunk_center.y.into(),
+                });
             }
             ClientPlatform::Bedrock(client) => {
-                client
-                    .send_game_packet(&CNetworkChunkPublisherUpdate::new(
-                        BlockPos::new(pos.x as i32, pos.y as i32, pos.z as i32),
-                        NonZeroU32::from(view_distance).get(),
-                    ))
-                    .await;
+                client.send_game_packet(&CNetworkChunkPublisherUpdate::new(
+                    BlockPos::new(pos.x as i32, pos.y as i32, pos.z as i32),
+                    NonZeroU32::from(view_distance).get(),
+                ));
             }
         }
         let mut loading_chunks = Vec::new();
@@ -67,25 +62,24 @@ pub async fn update_position(player: &Arc<Player>) {
         // Make sure the watched section and the chunk watcher updates are async atomic. We want to
         // ensure what we unload when the player disconnects is correct.
         let level = &entity.world.level;
-        level.mark_chunks_as_newly_watched(&loading_chunks).await;
-        let chunks_to_clean = level.mark_chunks_as_not_watched(&unloading_chunks).await;
+        level.mark_chunks_as_newly_watched(&loading_chunks);
+        let chunks_to_clean = level.mark_chunks_as_not_watched(&unloading_chunks);
 
         {
             // After marking the chunks as watched, remove chunks that we are already in the process
             // of sending.
-            let chunk_manager = player.chunk_manager.lock().await;
+            let chunk_manager = player.chunk_manager.lock();
             loading_chunks.retain(|pos| !chunk_manager.is_chunk_pending(pos));
         };
 
         player.watched_section.store(new_cylindrical);
 
         if !chunks_to_clean.is_empty() {
-            level.clean_chunks(&chunks_to_clean).await;
+            level.clean_chunks(&chunks_to_clean);
             for chunk in unloading_chunks {
                 player
                     .client
-                    .enqueue_packet(&CUnloadChunk::new(chunk.x, chunk.y))
-                    .await;
+                    .enqueue_packet(&CUnloadChunk::new(chunk.x, chunk.y));
             }
         }
 

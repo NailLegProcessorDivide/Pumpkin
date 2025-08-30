@@ -1,4 +1,3 @@
-use async_trait::async_trait;
 use pumpkin_data::Block;
 use pumpkin_data::entity::EntityType;
 use pumpkin_protocol::java::client::play::{MetaDataType, Metadata};
@@ -27,15 +26,13 @@ impl FallingEntity {
     }
 
     /// Replaced the current Block and Spawns a new Falling one
-    pub async fn replace_spawn(world: &Arc<World>, position: BlockPos, block_state: BlockStateId) {
+    pub fn replace_spawn(world: &Arc<World>, position: BlockPos, block_state: BlockStateId) {
         // Replace the original block, TODO: use fluid state
-        world
-            .set_block_state(
-                &position,
-                Block::AIR.default_state.id,
-                BlockFlags::NOTIFY_ALL,
-            )
-            .await;
+        world.set_block_state(
+            &position,
+            Block::AIR.default_state.id,
+            BlockFlags::NOTIFY_ALL,
+        );
 
         let position = position.0.to_f64().add_raw(0.5, 0.0, 0.5);
         let entity = Entity::new(
@@ -47,17 +44,17 @@ impl FallingEntity {
         );
         entity.data.store(i32::from(block_state), Ordering::Relaxed);
         let entity = Arc::new(Self::new(entity, block_state));
-        world.spawn_entity(entity).await;
+        world.spawn_entity(entity);
     }
 }
 
 impl NBTStorage for FallingEntity {}
 
-#[async_trait]
+
 impl EntityBase for FallingEntity {
-    async fn tick(&self, caller: Arc<dyn EntityBase>, server: &Server) {
+    fn tick(&self, caller: Arc<dyn EntityBase>, server: &Server) {
         let entity = &self.entity;
-        entity.tick(caller.clone(), server).await;
+        entity.tick(caller.clone(), server);
 
         let original_velo = entity.velocity.load();
         let mut velo = original_velo;
@@ -65,36 +62,31 @@ impl EntityBase for FallingEntity {
 
         entity.velocity.store(velo);
 
-        entity.move_entity(caller.clone(), velo).await;
-        entity.tick_block_collisions(&caller, server).await;
+        entity.move_entity(caller.clone(), velo);
+        entity.tick_block_collisions(&caller, server);
         if entity.on_ground.load(Ordering::Relaxed) {
             entity.velocity.store(velo.multiply(0.7, -0.5, 0.7));
-            entity
-                .world
-                .set_block_state(
-                    &self.entity.block_pos.load(),
-                    self.block_state_id,
-                    BlockFlags::NOTIFY_ALL,
-                )
-                .await;
-            entity.remove().await;
+            entity.world.set_block_state(
+                &self.entity.block_pos.load(),
+                self.block_state_id,
+                BlockFlags::NOTIFY_ALL,
+            );
+            entity.remove();
         }
 
         entity.velocity.store(velo.multiply(0.98, 0.98, 0.98));
 
-        entity.send_pos_rot().await;
+        entity.send_pos_rot();
 
-        entity.send_velocity().await;
+        entity.send_velocity();
     }
 
-    async fn init_data_tracker(&self) {
-        self.entity
-            .send_meta_data(&[Metadata::new(
-                8,
-                MetaDataType::BlockPos,
-                self.entity.block_pos.load(),
-            )])
-            .await;
+    fn init_data_tracker(&self) {
+        self.entity.send_meta_data(&[Metadata::new(
+            8,
+            MetaDataType::BlockPos,
+            self.entity.block_pos.load(),
+        )]);
     }
 
     fn get_entity(&self) -> &Entity {

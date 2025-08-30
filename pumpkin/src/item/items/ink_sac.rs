@@ -1,6 +1,6 @@
 use std::sync::{Arc, atomic::Ordering};
 
-use async_trait::async_trait;
+
 use pumpkin_data::item::Item;
 use pumpkin_world::block::entities::{BlockEntity, sign::Text};
 
@@ -17,7 +17,7 @@ impl ItemMetadata for InkSacItem {
     }
 }
 
-#[async_trait]
+
 impl ItemBehaviour for InkSacItem {
     fn as_any(&self) -> &dyn std::any::Any {
         self
@@ -25,7 +25,7 @@ impl ItemBehaviour for InkSacItem {
 }
 
 impl InkSacItem {
-    pub async fn apply_to_sign(
+    pub fn apply_to_sign(
         &self,
         args: &UseWithItemArgs<'_>,
         block_entity: &Arc<dyn BlockEntity>,
@@ -37,14 +37,14 @@ impl InkSacItem {
             return BlockActionResult::PassToDefaultBlockAction;
         }
 
-        args.world.update_block_entity(block_entity).await;
+        args.world.update_block_entity(block_entity);
         args.world
             .play_block_sound(
                 pumpkin_data::sound::Sound::ItemInkSacUse,
                 pumpkin_data::sound::SoundCategory::Blocks,
                 *args.position,
             )
-            .await;
+            ;
         BlockActionResult::Success
     }
 }

@@ -6,13 +6,13 @@ use crate::entity::player::Player;
 use crate::server::Server;
 use crate::world::World;
 use args::ConsumedArgs;
-use async_trait::async_trait;
 
 use dispatcher::CommandError;
 use pumpkin_util::math::vector3::Vector3;
 use pumpkin_util::permission::PermissionLvl;
 use pumpkin_util::text::TextComponent;
 use pumpkin_util::translation::Locale;
+use tokio::sync::mpsc;
 
 pub mod args;
 pub mod client_suggestions;
@@ -21,7 +21,7 @@ pub mod dispatcher;
 pub mod tree;
 
 pub enum CommandSender {
-    Rcon(Arc<tokio::sync::Mutex<Vec<String>>>),
+    Rcon(mpsc::Sender<String>),
     Console,
     Player(Arc<Player>),
 }
@@ -41,11 +41,13 @@ impl fmt::Display for CommandSender {
 }
 
 impl CommandSender {
-    pub async fn send_message(&self, text: TextComponent) {
+    pub fn send_message(&self, text: TextComponent) {
         match self {
             Self::Console => log::info!("{}", text.to_pretty_console()),
-            Self::Player(c) => c.send_system_message(&text).await,
-            Self::Rcon(s) => s.lock().await.push(text.to_pretty_console()),
+            Self::Player(c) => c.send_system_message(&text),
+            Self::Rcon(s) => s
+                .try_send(text.to_pretty_console())
+                .expect("Error sending message to RCON"),
         }
     }
 
@@ -84,10 +86,10 @@ impl CommandSender {
     }
 
     /// Check if the sender has a specific permission
-    pub async fn has_permission(&self, node: &str) -> bool {
+    pub fn has_permission(&self, node: &str) -> bool {
         match self {
             Self::Console | Self::Rcon(_) => true, // Console and RCON always have all permissions
-            Self::Player(p) => p.has_permission(node).await,
+            Self::Player(p) => p.has_permission(node),
         }
     }
 
@@ -108,19 +110,18 @@ impl CommandSender {
         }
     }
 
-    pub async fn get_locale(&self) -> Locale {
+    pub fn get_locale(&self) -> Locale {
         match self {
             Self::Console | Self::Rcon(..) => Locale::EnUs, // Default locale for console and RCON
             Self::Player(player) => {
-                Locale::from_str(&player.config.read().await.locale).unwrap_or(Locale::EnUs)
+                Locale::from_str(&player.config.read().locale).unwrap_or(Locale::EnUs)
             }
         }
     }
 }
 
-#[async_trait]
 pub trait CommandExecutor: Sync {
-    async fn execute<'a>(
+    fn execute<'a>(
         &self,
         sender: &mut CommandSender,
         server: &Server,

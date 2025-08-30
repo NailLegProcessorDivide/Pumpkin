@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use async_trait::async_trait;
+
 use pumpkin_data::fluid::Fluid;
 use pumpkin_macros::pumpkin_block;
 use pumpkin_util::math::position::BlockPos;
@@ -15,9 +15,8 @@ pub struct FlowingWater;
 
 const WATER_FLOW_SPEED: u8 = 5;
 
-#[async_trait]
 impl FluidBehaviour for FlowingWater {
-    async fn placed(
+    fn placed(
         &self,
         world: &Arc<World>,
         fluid: &Fluid,
@@ -27,44 +26,39 @@ impl FluidBehaviour for FlowingWater {
         _notify: bool,
     ) {
         if old_state_id != state_id {
-            world
-                .schedule_fluid_tick(fluid, *block_pos, WATER_FLOW_SPEED, TickPriority::Normal)
-                .await;
+            world.schedule_fluid_tick(fluid, *block_pos, WATER_FLOW_SPEED, TickPriority::Normal);
         }
     }
 
-    async fn on_scheduled_tick(&self, world: &Arc<World>, fluid: &Fluid, block_pos: &BlockPos) {
-        self.spread_fluid(world, fluid, block_pos).await;
+    fn on_scheduled_tick(&self, world: &Arc<World>, fluid: &Fluid, block_pos: &BlockPos) {
+        self.spread_fluid(world, fluid, block_pos);
     }
 
-    async fn on_neighbor_update(
+    fn on_neighbor_update(
         &self,
         world: &Arc<World>,
         fluid: &Fluid,
         block_pos: &BlockPos,
         _notify: bool,
     ) {
-        world
-            .schedule_fluid_tick(fluid, *block_pos, WATER_FLOW_SPEED, TickPriority::Normal)
-            .await;
+        world.schedule_fluid_tick(fluid, *block_pos, WATER_FLOW_SPEED, TickPriority::Normal);
     }
 
-    async fn on_entity_collision(&self, entity: &dyn EntityBase) {
+    fn on_entity_collision(&self, entity: &dyn EntityBase) {
         entity.get_entity().extinguish();
     }
 }
 
-#[async_trait]
 impl FlowingFluid for FlowingWater {
-    async fn get_drop_off(&self) -> i32 {
+    fn get_drop_off(&self) -> i32 {
         1
     }
 
-    async fn get_slope_find_distance(&self) -> i32 {
+    fn get_slope_find_distance(&self) -> i32 {
         4
     }
 
-    async fn can_convert_to_source(&self, _world: &Arc<World>) -> bool {
+    fn can_convert_to_source(&self, _world: &Arc<World>) -> bool {
         //TODO add game rule check for water conversion
         true
     }

@@ -1,4 +1,4 @@
-use async_trait::async_trait;
+
 use pumpkin_data::Block;
 use pumpkin_macros::pumpkin_block;
 use pumpkin_util::math::position::BlockPos;
@@ -14,9 +14,8 @@ use crate::block::{BlockBehaviour, CanPlaceAtArgs, OnEntityCollisionArgs};
 #[pumpkin_block("minecraft:lily_pad")]
 pub struct LilyPadBlock;
 
-#[async_trait]
 impl BlockBehaviour for LilyPadBlock {
-    async fn on_entity_collision(&self, args: OnEntityCollisionArgs<'_>) {
+    fn on_entity_collision(&self, args: OnEntityCollisionArgs<'_>) {
         // Proberbly not the best solution, but works
         if args
             .entity
@@ -26,16 +25,15 @@ impl BlockBehaviour for LilyPadBlock {
             .ends_with("_boat")
         {
             args.world
-                .break_block(args.position, None, BlockFlags::empty())
-                .await;
+                .break_block(args.position, None, BlockFlags::empty());
         }
     }
 
-    async fn can_place_at(&self, args: CanPlaceAtArgs<'_>) -> bool {
-        <Self as PlantBlockBase>::can_place_at(self, args.block_accessor, args.position).await
+    fn can_place_at(&self, args: CanPlaceAtArgs<'_>) -> bool {
+        <Self as PlantBlockBase>::can_place_at(self, args.block_accessor, args.position)
     }
 
-    async fn get_state_for_neighbor_update(
+    fn get_state_for_neighbor_update(
         &self,
         args: GetStateForNeighborUpdateArgs<'_>,
     ) -> BlockStateId {
@@ -45,14 +43,13 @@ impl BlockBehaviour for LilyPadBlock {
             args.position,
             args.state_id,
         )
-        .await
     }
 }
 
 impl PlantBlockBase for LilyPadBlock {
-    async fn can_plant_on_top(&self, block_accessor: &dyn BlockAccessor, pos: &BlockPos) -> bool {
-        let block = block_accessor.get_block(pos).await;
-        let above_fluid = block_accessor.get_block(&pos.up()).await;
+    fn can_plant_on_top(&self, block_accessor: &dyn BlockAccessor, pos: &BlockPos) -> bool {
+        let block = block_accessor.get_block(pos);
+        let above_fluid = block_accessor.get_block(&pos.up());
         (block == &Block::WATER || block == &Block::ICE)
             && (above_fluid != &Block::WATER && above_fluid != &Block::LAVA)
     }

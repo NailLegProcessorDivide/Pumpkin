@@ -1,4 +1,3 @@
-use async_trait::async_trait;
 use pumpkin_util::text::TextComponent;
 
 use crate::command::args::entities::EntitiesArgumentConsumer;
@@ -16,9 +15,9 @@ const ARG_TARGET: &str = "target";
 
 struct Executor;
 
-#[async_trait]
+
 impl CommandExecutor for Executor {
-    async fn execute<'a>(
+    fn execute<'a>(
         &self,
         sender: &mut CommandSender,
         _server: &crate::server::Server,
@@ -30,13 +29,13 @@ impl CommandExecutor for Executor {
 
         let target_count = targets.len();
         for target in targets {
-            target.kill(target.clone()).await;
+            target.kill(target.clone());
         }
 
         let msg = if target_count == 1 {
             TextComponent::translate(
                 "commands.kill.success.single",
-                [targets[0].get_display_name().await],
+                [targets[0].get_display_name()],
             )
         } else {
             TextComponent::translate(
@@ -45,7 +44,7 @@ impl CommandExecutor for Executor {
             )
         };
 
-        sender.send_message(msg).await;
+        sender.send_message(msg);
 
         Ok(())
     }
@@ -53,23 +52,21 @@ impl CommandExecutor for Executor {
 
 struct SelfExecutor;
 
-#[async_trait]
+
 impl CommandExecutor for SelfExecutor {
-    async fn execute<'a>(
+    fn execute<'a>(
         &self,
         sender: &mut CommandSender,
         _server: &crate::server::Server,
         _args: &ConsumedArgs<'a>,
     ) -> Result<(), CommandError> {
         let target = sender.as_player().ok_or(CommandError::InvalidRequirement)?;
-        target.kill(target.clone()).await;
+        target.kill(target.clone());
 
-        sender
-            .send_message(TextComponent::translate(
-                "commands.kill.success.single",
-                [target.get_display_name().await],
-            ))
-            .await;
+        sender.send_message(TextComponent::translate(
+            "commands.kill.success.single",
+            [target.get_display_name()],
+        ));
 
         Ok(())
     }

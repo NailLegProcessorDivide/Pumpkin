@@ -1,4 +1,3 @@
-use async_trait::async_trait;
 use pumpkin_data::block_properties::HorizontalFacing;
 use pumpkin_data::tag::Taggable;
 use pumpkin_data::{
@@ -20,73 +19,60 @@ use crate::block::{
 #[pumpkin_block("minecraft:sugar_cane")]
 pub struct SugarCaneBlock;
 
-#[async_trait]
 impl BlockBehaviour for SugarCaneBlock {
-    async fn on_scheduled_tick(&self, args: OnScheduledTickArgs<'_>) {
-        if !can_place_at(args.world.as_ref(), args.position).await {
+    fn on_scheduled_tick(&self, args: OnScheduledTickArgs<'_>) {
+        if !can_place_at(args.world.as_ref(), args.position) {
             args.world
-                .break_block(args.position, None, BlockFlags::empty())
-                .await;
+                .break_block(args.position, None, BlockFlags::empty());
         }
     }
 
-    async fn random_tick(&self, args: RandomTickArgs<'_>) {
-        if args
-            .world
-            .get_block_state(&args.position.up())
-            .await
-            .is_air()
-        {
-            let state_id = args.world.get_block_state(args.position).await.id;
+    fn random_tick(&self, args: RandomTickArgs<'_>) {
+        if args.world.get_block_state(&args.position.up()).is_air() {
+            let state_id = args.world.get_block_state(args.position).id;
             let age = CactusLikeProperties::from_state_id(state_id, args.block).age;
             if age == Integer0To15::L15 {
                 args.world
-                    .set_block_state(&args.position.up(), state_id, BlockFlags::empty())
-                    .await;
+                    .set_block_state(&args.position.up(), state_id, BlockFlags::empty());
                 let props = CactusLikeProperties {
                     age: Integer0To15::L0,
                 };
-                args.world
-                    .set_block_state(
-                        args.position,
-                        props.to_state_id(args.block),
-                        BlockFlags::empty(),
-                    )
-                    .await;
+                args.world.set_block_state(
+                    args.position,
+                    props.to_state_id(args.block),
+                    BlockFlags::empty(),
+                );
             } else {
                 let props = CactusLikeProperties {
                     age: Integer0To15::from_index(age.to_index() + 1),
                 };
-                args.world
-                    .set_block_state(
-                        args.position,
-                        props.to_state_id(args.block),
-                        BlockFlags::empty(),
-                    )
-                    .await;
+                args.world.set_block_state(
+                    args.position,
+                    props.to_state_id(args.block),
+                    BlockFlags::empty(),
+                );
             }
         }
     }
 
-    async fn get_state_for_neighbor_update(
+    fn get_state_for_neighbor_update(
         &self,
         args: GetStateForNeighborUpdateArgs<'_>,
     ) -> BlockStateId {
-        if !can_place_at(args.world, args.position).await {
+        if !can_place_at(args.world, args.position) {
             args.world
-                .schedule_block_tick(args.block, *args.position, 1, TickPriority::Normal)
-                .await;
+                .schedule_block_tick(args.block, *args.position, 1, TickPriority::Normal);
         }
         args.state_id
     }
 
-    async fn can_place_at(&self, args: CanPlaceAtArgs<'_>) -> bool {
-        can_place_at(args.block_accessor, args.position).await
+    fn can_place_at(&self, args: CanPlaceAtArgs<'_>) -> bool {
+        can_place_at(args.block_accessor, args.position)
     }
 }
 
-async fn can_place_at(block_accessor: &dyn BlockAccessor, block_pos: &BlockPos) -> bool {
-    let block_below = block_accessor.get_block(&block_pos.down()).await;
+fn can_place_at(block_accessor: &dyn BlockAccessor, block_pos: &BlockPos) -> bool {
+    let block_below = block_accessor.get_block(&block_pos.down());
 
     if block_below == &Block::SUGAR_CANE {
         return true;
@@ -96,9 +82,7 @@ async fn can_place_at(block_accessor: &dyn BlockAccessor, block_pos: &BlockPos) 
         || block_below.is_tagged_with_by_tag(&tag::Block::MINECRAFT_SAND)
     {
         for direction in HorizontalFacing::all() {
-            let block = block_accessor
-                .get_block(&block_pos.down().offset(direction.to_offset()))
-                .await;
+            let block = block_accessor.get_block(&block_pos.down().offset(direction.to_offset()));
 
             if block == &Block::WATER || block == &Block::FROSTED_ICE {
                 return true;

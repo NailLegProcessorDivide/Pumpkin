@@ -9,7 +9,7 @@ use crate::entity::{
     ai::goal::{active_target_goal::ActiveTargetGoal, look_at_entity::LookAtEntityGoal},
 };
 use crate::world::World;
-use async_trait::async_trait;
+
 use pumpkin_data::Block;
 use pumpkin_data::entity::EntityType;
 use pumpkin_data::sound::{Sound, SoundCategory};
@@ -22,7 +22,7 @@ pub struct Zombie {
 }
 
 impl Zombie {
-    pub async fn make(entity: Entity) -> Arc<Self> {
+    pub fn make(entity: Entity) -> Arc<Self> {
         let mob_entity = MobEntity::new(entity);
         let zombie = Self { mob_entity };
         let mob_arc = Arc::new(zombie);
@@ -36,33 +36,26 @@ impl Zombie {
         let goal_selector = &mob_arc.mob_entity.goals_selector;
         let target_selector = &mob_arc.mob_entity.target_selector;
 
-        goal_selector.add_goal(4, DestroyEggGoal::new(1.0, 3)).await;
-        goal_selector
-            .add_goal(
-                8,
-                Arc::new(LookAtEntityGoal::with_default(
-                    mob_weak,
-                    &EntityType::PLAYER,
-                    8.0,
-                )),
-            )
-            .await;
-        goal_selector
-            .add_goal(8, Arc::new(LookAroundGoal::default()))
-            .await;
-        goal_selector
-            .add_goal(2, Arc::new(ZombieAttackGoal::new(0.1, false)))
-            .await;
+        goal_selector.add_goal(4, DestroyEggGoal::new(1.0, 3));
+        goal_selector.add_goal(
+            8,
+            Arc::new(LookAtEntityGoal::with_default(
+                mob_weak,
+                &EntityType::PLAYER,
+                8.0,
+            )),
+        );
+        goal_selector.add_goal(8, Arc::new(LookAroundGoal::default()));
+        goal_selector.add_goal(2, Arc::new(ZombieAttackGoal::new(0.1, false)));
 
-        target_selector
-            .add_goal(
-                2,
-                Arc::new(
-                    ActiveTargetGoal::with_default(&mob_arc.mob_entity, &EntityType::PLAYER, true)
-                        .await,
-                ),
-            )
-            .await;
+        target_selector.add_goal(
+            2,
+            Arc::new(ActiveTargetGoal::with_default(
+                &mob_arc.mob_entity,
+                &EntityType::PLAYER,
+                true,
+            )),
+        );
 
         mob_arc
     }
@@ -98,26 +91,26 @@ impl DestroyEggGoal {
     }
 }
 
-#[async_trait]
+
 impl Goal for DestroyEggGoal {
-    async fn can_start(&self, mob: &dyn Mob) -> bool {
-        self.step_and_destroy_block_goal.can_start(mob).await
+    fn can_start(&self, mob: &dyn Mob) -> bool {
+        self.step_and_destroy_block_goal.can_start(mob)
     }
 
-    async fn should_continue(&self, mob: &dyn Mob) -> bool {
-        self.step_and_destroy_block_goal.should_continue(mob).await
+    fn should_continue(&self, mob: &dyn Mob) -> bool {
+        self.step_and_destroy_block_goal.should_continue(mob)
     }
 
-    async fn start(&self, mob: &dyn Mob) {
-        self.step_and_destroy_block_goal.start(mob).await;
+    fn start(&self, mob: &dyn Mob) {
+        self.step_and_destroy_block_goal.start(mob);
     }
 
-    async fn stop(&self, mob: &dyn Mob) {
-        self.step_and_destroy_block_goal.stop(mob).await;
+    fn stop(&self, mob: &dyn Mob) {
+        self.step_and_destroy_block_goal.stop(mob);
     }
 
-    async fn tick(&self, mob: &dyn Mob) {
-        self.step_and_destroy_block_goal.tick(mob).await;
+    fn tick(&self, mob: &dyn Mob) {
+        self.step_and_destroy_block_goal.tick(mob);
     }
 
     fn should_run_every_tick(&self) -> bool {
@@ -129,41 +122,36 @@ impl Goal for DestroyEggGoal {
     }
 }
 
-#[async_trait]
+
 impl Stepping for DestroyEggGoal {
-    async fn tick_stepping(&self, world: Arc<World>, block_pos: BlockPos) {
+    fn tick_stepping(&self, world: Arc<World>, block_pos: BlockPos) {
         let random = rng().random::<f32>();
-        world
-            .play_sound_raw(
-                Sound::EntityZombieDestroyEgg as u16,
-                SoundCategory::Hostile,
-                &block_pos.0.to_f64(),
-                0.7,
-                0.9 + random * 0.2,
-            )
-            .await;
+        world.play_sound_raw(
+            Sound::EntityZombieDestroyEgg as u16,
+            SoundCategory::Hostile,
+            &block_pos.0.to_f64(),
+            0.7,
+            0.9 + random * 0.2,
+        );
     }
 
-    async fn on_destroy_block(&self, world: Arc<World>, block_pos: BlockPos) {
+    fn on_destroy_block(&self, world: Arc<World>, block_pos: BlockPos) {
         let random = rng().random::<f32>();
-        world
-            .play_sound_raw(
-                Sound::EntityTurtleEggBreak as u16,
-                SoundCategory::Blocks,
-                &block_pos.0.to_f64(),
-                0.7,
-                0.9 + random * 0.2,
-            )
-            .await;
+        world.play_sound_raw(
+            Sound::EntityTurtleEggBreak as u16,
+            SoundCategory::Blocks,
+            &block_pos.0.to_f64(),
+            0.7,
+            0.9 + random * 0.2,
+        );
     }
 }
 
-#[async_trait]
+
 impl MoveToTargetPos for DestroyEggGoal {
-    async fn is_target_pos(&self, world: Arc<World>, block_pos: BlockPos) -> bool {
+    fn is_target_pos(&self, world: Arc<World>, block_pos: BlockPos) -> bool {
         self.step_and_destroy_block_goal
             .is_target_pos(world, block_pos)
-            .await
     }
 
     fn get_desired_distance_to_target(&self) -> f64 {

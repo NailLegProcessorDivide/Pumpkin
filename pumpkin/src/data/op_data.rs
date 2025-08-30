@@ -6,8 +6,8 @@ use uuid::Uuid;
 
 use super::{LoadJSONConfiguration, SaveJSONConfiguration};
 
-pub static OPERATOR_CONFIG: LazyLock<tokio::sync::RwLock<OperatorConfig>> =
-    LazyLock::new(|| tokio::sync::RwLock::new(OperatorConfig::load()));
+pub static OPERATOR_CONFIG: LazyLock<parking_lot::RwLock<OperatorConfig>> =
+    LazyLock::new(|| parking_lot::RwLock::new(OperatorConfig::load()));
 
 #[derive(Deserialize, Serialize, Default)]
 #[serde(transparent)]

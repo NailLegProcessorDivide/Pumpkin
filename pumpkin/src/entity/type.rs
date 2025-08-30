@@ -13,7 +13,7 @@ use crate::{
     world::World,
 };
 
-pub async fn from_type(
+pub fn from_type(
     entity_type: &'static EntityType,
     position: Vector3<f64>,
     world: &Arc<World>,
@@ -23,7 +23,7 @@ pub async fn from_type(
 
     #[allow(clippy::single_match)]
     let mob: Arc<dyn EntityBase> = match entity_type.id {
-        id if id == EntityType::ZOMBIE.id => Zombie::make(entity).await,
+        id if id == EntityType::ZOMBIE.id => Zombie::make(entity),
         id if id == EntityType::PAINTING.id => Arc::new(PaintingEntity::new(entity)),
         id if id == EntityType::END_CRYSTAL.id => Arc::new(EndCrystalEntity::new(entity)),
         // TODO

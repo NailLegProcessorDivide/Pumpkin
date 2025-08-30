@@ -1,4 +1,3 @@
-use async_trait::async_trait;
 use pumpkin_protocol::codec::var_int::VarInt;
 use pumpkin_protocol::java::client::play::CTransfer;
 use pumpkin_util::text::TextComponent;
@@ -31,9 +30,9 @@ fn port_consumer() -> BoundedNumArgumentConsumer<i32> {
 
 struct TargetSelfExecutor;
 
-#[async_trait]
+
 impl CommandExecutor for TargetSelfExecutor {
-    async fn execute<'a>(
+    fn execute<'a>(
         &self,
         sender: &mut CommandSender,
         _server: &crate::server::Server,
@@ -47,12 +46,10 @@ impl CommandExecutor for TargetSelfExecutor {
             Err(_) => 25565,
             Ok(Ok(count)) => count,
             Ok(Err(_)) => {
-                sender
-                    .send_message(
-                        TextComponent::text("Port must be between 1 and 65535.")
-                            .color(Color::Named(NamedColor::Red)),
-                    )
-                    .await;
+                sender.send_message(
+                    TextComponent::text("Port must be between 1 and 65535.")
+                        .color(Color::Named(NamedColor::Red)),
+                );
                 return Ok(());
             }
         };
@@ -62,8 +59,7 @@ impl CommandExecutor for TargetSelfExecutor {
             log::info!("[{name}: Transferring {name} to {hostname}:{port}]");
             player
                 .client
-                .enqueue_packet(&CTransfer::new(hostname, VarInt(port)))
-                .await;
+                .enqueue_packet(&CTransfer::new(hostname, VarInt(port)));
             Ok(())
         } else {
             Err(InvalidRequirement)
@@ -73,9 +69,9 @@ impl CommandExecutor for TargetSelfExecutor {
 
 struct TargetPlayerExecutor;
 
-#[async_trait]
+
 impl CommandExecutor for TargetPlayerExecutor {
-    async fn execute<'a>(
+    fn execute<'a>(
         &self,
         sender: &mut CommandSender,
         _server: &crate::server::Server,
@@ -89,12 +85,10 @@ impl CommandExecutor for TargetPlayerExecutor {
             Err(_) => 25565,
             Ok(Ok(count)) => count,
             Ok(Err(_)) => {
-                sender
-                    .send_message(
-                        TextComponent::text("Port must be between 1 and 65535.")
-                            .color(Color::Named(NamedColor::Red)),
-                    )
-                    .await;
+                sender.send_message(
+                    TextComponent::text("Port must be between 1 and 65535.")
+                        .color(Color::Named(NamedColor::Red)),
+                );
                 return Ok(());
             }
         };
@@ -105,8 +99,7 @@ impl CommandExecutor for TargetPlayerExecutor {
 
         for p in players {
             p.client
-                .enqueue_packet(&CTransfer::new(hostname, VarInt(port)))
-                .await;
+                .enqueue_packet(&CTransfer::new(hostname, VarInt(port)));
             log::info!(
                 "[{sender}: Transferring {} to {hostname}:{port}]",
                 p.gameprofile.name

@@ -1,4 +1,3 @@
-use async_trait::async_trait;
 use pumpkin_data::game_rules::{GameRule, GameRuleRegistry, GameRuleValue};
 
 use crate::command::args::FindArg;
@@ -22,41 +21,39 @@ const ARG_NAME: &str = "value";
 
 struct QueryExecutor(GameRule);
 
-#[async_trait]
+
 impl CommandExecutor for QueryExecutor {
-    async fn execute<'a>(
+    fn execute<'a>(
         &self,
         sender: &mut CommandSender,
         server: &Server,
         _args: &ConsumedArgs<'a>,
     ) -> Result<(), CommandError> {
         let key = TextComponent::text(self.0.to_string());
-        let level_info = server.level_info.read().await;
+        let level_info = server.level_info.read();
         let value = TextComponent::text(level_info.game_rules.get(&self.0).to_string());
         drop(level_info);
 
-        sender
-            .send_message(TextComponent::translate(
-                "commands.gamerule.query",
-                [key, value],
-            ))
-            .await;
+        sender.send_message(TextComponent::translate(
+            "commands.gamerule.query",
+            [key, value],
+        ));
         Ok(())
     }
 }
 
 struct SetExecutor(GameRule);
 
-#[async_trait]
+
 impl CommandExecutor for SetExecutor {
-    async fn execute<'a>(
+    fn execute<'a>(
         &self,
         sender: &mut CommandSender,
         server: &Server,
         args: &ConsumedArgs<'a>,
     ) -> Result<(), CommandError> {
         let key = TextComponent::text(self.0.to_string());
-        let mut level_info = server.level_info.write().await;
+        let mut level_info = server.level_info.write();
         let raw_value = level_info.game_rules.get_mut(&self.0);
 
         let value = TextComponent::text(match raw_value {
@@ -73,12 +70,10 @@ impl CommandExecutor for SetExecutor {
         });
         drop(level_info);
 
-        sender
-            .send_message(TextComponent::translate(
-                "commands.gamerule.set",
-                [key, value],
-            ))
-            .await;
+        sender.send_message(TextComponent::translate(
+            "commands.gamerule.set",
+            [key, value],
+        ));
         Ok(())
     }
 }

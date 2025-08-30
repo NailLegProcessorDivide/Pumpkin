@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use async_trait::async_trait;
+
 use pumpkin_protocol::java::client::play::{ArgumentType, CommandSuggestion, SuggestionProviders};
 use pumpkin_util::Difficulty;
 
@@ -25,9 +25,9 @@ impl GetClientSideArgParser for DifficultyArgumentConsumer {
     }
 }
 
-#[async_trait]
+
 impl ArgumentConsumer for DifficultyArgumentConsumer {
-    async fn consume<'a>(
+    fn consume<'a>(
         &'a self,
         _sender: &CommandSender,
         _server: &'a Server,
@@ -39,7 +39,7 @@ impl ArgumentConsumer for DifficultyArgumentConsumer {
             .map_or_else(|_| None, |difficulty| Some(Arg::Difficulty(difficulty)))
     }
 
-    async fn suggest<'a>(
+    fn suggest<'a>(
         &'a self,
         _sender: &CommandSender,
         _server: &'a Server,

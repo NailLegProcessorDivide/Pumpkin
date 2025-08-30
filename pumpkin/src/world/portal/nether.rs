@@ -43,7 +43,7 @@ impl NetherPortal {
         self.is_valid() && self.found_portal_blocks == self.width * self.height
     }
 
-    pub async fn create(&self, world: &Arc<World>) {
+    pub fn create(&self, world: &Arc<World>) {
         let mut props = NetherPortalLikeProperties::default(&Block::NETHER_PORTAL);
         props.axis = self.axis;
         let state = props.to_state_id(&Block::NETHER_PORTAL);
@@ -55,23 +55,21 @@ impl NetherPortal {
                 .offset_dir(self.negative_direction.to_offset(), self.width as i32 - 1),
         );
         for pos in blocks {
-            world
-                .set_block_state(
-                    &pos,
-                    state,
-                    BlockFlags::NOTIFY_LISTENERS | BlockFlags::FORCE_STATE,
-                )
-                .await;
+            world.set_block_state(
+                &pos,
+                state,
+                BlockFlags::NOTIFY_LISTENERS | BlockFlags::FORCE_STATE,
+            );
         }
     }
 
-    pub async fn get_new_portal(
+    pub fn get_new_portal(
         world: &World,
         pos: &BlockPos,
         first_axis: HorizontalAxis,
     ) -> Option<Self> {
         // We check both axis here X and Z
-        if let Some(portal) = Self::get_on_axis(world, pos, first_axis).await
+        if let Some(portal) = Self::get_on_axis(world, pos, first_axis)
             && portal.is_valid()
             && portal.found_portal_blocks == 0
         {
@@ -82,7 +80,7 @@ impl NetherPortal {
         } else {
             HorizontalAxis::X
         };
-        if let Some(portal) = Self::get_on_axis(world, pos, next_axis).await
+        if let Some(portal) = Self::get_on_axis(world, pos, next_axis)
             && portal.is_valid()
             && portal.found_portal_blocks == 0
         {
@@ -91,20 +89,19 @@ impl NetherPortal {
         None
     }
 
-    pub async fn get_on_axis(world: &World, pos: &BlockPos, axis: HorizontalAxis) -> Option<Self> {
+    pub fn get_on_axis(world: &World, pos: &BlockPos, axis: HorizontalAxis) -> Option<Self> {
         let direction = if axis == HorizontalAxis::X {
             BlockDirection::West
         } else {
             BlockDirection::South
         };
-        let cornor = Self::get_lower_cornor(world, direction, pos).await?;
-        let width = Self::get_width(world, &cornor, &direction).await;
+        let cornor = Self::get_lower_cornor(world, direction, pos)?;
+        let width = Self::get_width(world, &cornor, &direction);
         if !(Self::MIN_WIDTH..=Self::MAX_WIDTH).contains(&width) {
             return None;
         }
         let mut found_portal_blocks = 0;
-        let height =
-            Self::get_height(world, &cornor, &direction, width, &mut found_portal_blocks).await?;
+        let height = Self::get_height(world, &cornor, &direction, width, &mut found_portal_blocks)?;
         Some(Self {
             axis,
             found_portal_blocks,
@@ -115,7 +112,7 @@ impl NetherPortal {
         })
     }
 
-    async fn get_lower_cornor(
+    fn get_lower_cornor(
         world: &World,
         direction: BlockDirection,
         pos: &BlockPos,
@@ -124,21 +121,21 @@ impl NetherPortal {
         let limit_y = pos.0.y - Self::MAX_HEIGHT as i32;
         let mut pos = *pos;
         while pos.0.y > limit_y {
-            let (block, state) = world.get_block_and_state(&pos.down()).await;
+            let (block, state) = world.get_block_and_state(&pos.down());
             if !Self::valid_state_inside_portal(block, state) {
                 break;
             }
             pos = pos.down();
         }
         let neg_dir = direction.opposite();
-        let width = (Self::get_width(world, &pos, &neg_dir).await as i32) - 1;
+        let width = (Self::get_width(world, &pos, &neg_dir) as i32) - 1;
         if width < 0 {
             return None;
         }
         Some(pos.offset_dir(neg_dir.to_offset(), width))
     }
 
-    async fn get_width(
+    fn get_width(
         world: &World,
         original_lower_corner: &BlockPos,
         negative_dir: &BlockDirection,
@@ -146,14 +143,14 @@ impl NetherPortal {
         let mut lower_corner;
         for i in 0..=Self::MAX_WIDTH {
             lower_corner = original_lower_corner.offset_dir(negative_dir.to_offset(), i as i32);
-            let (block, block_state) = world.get_block_and_state(&lower_corner).await;
+            let (block, block_state) = world.get_block_and_state(&lower_corner);
             if !Self::valid_state_inside_portal(block, block_state) {
                 if &Self::FRAME_BLOCK != block {
                     break;
                 }
                 return i;
             }
-            let block = world.get_block(&lower_corner.down()).await;
+            let block = world.get_block(&lower_corner.down());
             if &Self::FRAME_BLOCK != block {
                 break;
             }
@@ -161,7 +158,7 @@ impl NetherPortal {
         0
     }
 
-    async fn get_height(
+    fn get_height(
         world: &World,
         lower_corner: &BlockPos,
         negative_dir: &BlockDirection,
@@ -174,18 +171,16 @@ impl NetherPortal {
             negative_dir,
             width,
             found_portal_blocks,
-        )
-        .await;
+        );
         if !(Self::MIN_HEIGHT..=Self::MAX_HEIGHT).contains(&height)
             || !Self::is_horizontal_frame_valid(world, lower_corner, negative_dir, width, height)
-                .await
         {
             return None;
         }
         Some(height)
     }
 
-    async fn get_potential_height(
+    fn get_potential_height(
         world: &World,
         lower_corner: &BlockPos,
         negative_dir: &BlockDirection,
@@ -196,14 +191,14 @@ impl NetherPortal {
             let mut pos = lower_corner
                 .offset_dir(BlockDirection::Up.to_offset(), i)
                 .offset_dir(negative_dir.to_offset(), -1);
-            if world.get_block(&pos).await != &Self::FRAME_BLOCK {
+            if world.get_block(&pos) != &Self::FRAME_BLOCK {
                 return i as u32;
             }
 
             pos = lower_corner
                 .offset_dir(BlockDirection::Up.to_offset(), i)
                 .offset_dir(negative_dir.to_offset(), width as i32);
-            if world.get_block(&pos).await != &Self::FRAME_BLOCK {
+            if world.get_block(&pos) != &Self::FRAME_BLOCK {
                 return i as u32;
             }
 
@@ -211,7 +206,7 @@ impl NetherPortal {
                 pos = lower_corner
                     .offset_dir(BlockDirection::Up.to_offset(), i)
                     .offset_dir(negative_dir.to_offset(), j as i32);
-                let (block, block_state) = world.get_block_and_state(&pos).await;
+                let (block, block_state) = world.get_block_and_state(&pos);
                 if !Self::valid_state_inside_portal(block, block_state) {
                     return i as u32;
                 }
@@ -223,7 +218,7 @@ impl NetherPortal {
         21
     }
 
-    async fn is_horizontal_frame_valid(
+    fn is_horizontal_frame_valid(
         world: &World,
         lower_corner: &BlockPos,
         dir: &BlockDirection,
@@ -235,7 +230,7 @@ impl NetherPortal {
             pos = lower_corner
                 .offset_dir(BlockDirection::Up.to_offset(), height as i32)
                 .offset_dir(dir.to_offset(), i as i32);
-            if &Self::FRAME_BLOCK != world.get_block(&pos).await {
+            if &Self::FRAME_BLOCK != world.get_block(&pos) {
                 return false;
             }
         }

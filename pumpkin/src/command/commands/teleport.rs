@@ -1,4 +1,3 @@
-use async_trait::async_trait;
 use pumpkin_util::math::vector3::Vector3;
 use pumpkin_util::text::TextComponent;
 
@@ -53,9 +52,9 @@ fn yaw_pitch_facing_position(
 
 struct EntitiesToEntityExecutor;
 
-#[async_trait]
+
 impl CommandExecutor for EntitiesToEntityExecutor {
-    async fn execute<'a>(
+    fn execute<'a>(
         &self,
         _sender: &mut CommandSender,
         _server: &crate::server::Server,
@@ -77,8 +76,7 @@ impl CommandExecutor for EntitiesToEntityExecutor {
             let world = base_entity.world.clone();
             target
                 .clone()
-                .teleport(pos, yaw.into(), pitch.into(), world)
-                .await;
+                .teleport(pos, yaw.into(), pitch.into(), world);
         }
 
         Ok(())
@@ -87,9 +85,9 @@ impl CommandExecutor for EntitiesToEntityExecutor {
 
 struct EntitiesToPosFacingPosExecutor;
 
-#[async_trait]
+
 impl CommandExecutor for EntitiesToPosFacingPosExecutor {
-    async fn execute<'a>(
+    fn execute<'a>(
         &self,
         sender: &mut CommandSender,
         server: &crate::server::Server,
@@ -108,7 +106,7 @@ impl CommandExecutor for EntitiesToPosFacingPosExecutor {
         //todo
         let world = match sender {
             CommandSender::Rcon(_) | CommandSender::Console => {
-                server.worlds.read().await.first().unwrap().clone()
+                server.worlds.read().first().unwrap().clone()
             }
             CommandSender::Player(player) => player.world().clone(),
         };
@@ -116,8 +114,7 @@ impl CommandExecutor for EntitiesToPosFacingPosExecutor {
         for target in targets {
             target
                 .clone()
-                .teleport(pos, Some(yaw), Some(pitch), world.clone())
-                .await;
+                .teleport(pos, Some(yaw), Some(pitch), world.clone());
         }
 
         Ok(())
@@ -126,9 +123,9 @@ impl CommandExecutor for EntitiesToPosFacingPosExecutor {
 
 struct EntitiesToPosFacingEntityExecutor;
 
-#[async_trait]
+
 impl CommandExecutor for EntitiesToPosFacingEntityExecutor {
-    async fn execute<'a>(
+    fn execute<'a>(
         &self,
         _sender: &mut CommandSender,
         _server: &crate::server::Server,
@@ -146,15 +143,12 @@ impl CommandExecutor for EntitiesToPosFacingEntityExecutor {
         let (yaw, pitch) = yaw_pitch_facing_position(&pos, &facing_entity.get_entity().pos.load());
 
         for target in targets {
-            target
-                .clone()
-                .teleport(
-                    pos,
-                    Some(yaw),
-                    Some(pitch),
-                    facing_entity.get_entity().world.clone(),
-                )
-                .await;
+            target.clone().teleport(
+                pos,
+                Some(yaw),
+                Some(pitch),
+                facing_entity.get_entity().world.clone(),
+            );
         }
 
         Ok(())
@@ -163,9 +157,9 @@ impl CommandExecutor for EntitiesToPosFacingEntityExecutor {
 
 struct EntitiesToPosWithRotationExecutor;
 
-#[async_trait]
+
 impl CommandExecutor for EntitiesToPosWithRotationExecutor {
-    async fn execute<'a>(
+    fn execute<'a>(
         &self,
         _sender: &mut CommandSender,
         server: &crate::server::Server,
@@ -182,12 +176,11 @@ impl CommandExecutor for EntitiesToPosWithRotationExecutor {
         let (yaw, pitch) = RotationArgumentConsumer::find_arg(args, ARG_ROTATION)?;
 
         // todo command context
-        let world = server.worlds.read().await.first().unwrap().clone();
+        let world = server.worlds.read().first().unwrap().clone();
         for target in targets {
             target
                 .clone()
-                .teleport(pos, Some(yaw), Some(pitch), world.clone())
-                .await;
+                .teleport(pos, Some(yaw), Some(pitch), world.clone());
         }
 
         Ok(())
@@ -196,9 +189,9 @@ impl CommandExecutor for EntitiesToPosWithRotationExecutor {
 
 struct EntitiesToPosExecutor;
 
-#[async_trait]
+
 impl CommandExecutor for EntitiesToPosExecutor {
-    async fn execute<'a>(
+    fn execute<'a>(
         &self,
         sender: &mut CommandSender,
         server: &crate::server::Server,
@@ -215,7 +208,7 @@ impl CommandExecutor for EntitiesToPosExecutor {
         // todo command context
         let world = match sender {
             CommandSender::Rcon(_) | CommandSender::Console => {
-                server.worlds.read().await.first().unwrap().clone()
+                server.worlds.read().first().unwrap().clone()
             }
             CommandSender::Player(player) => player.world().clone(),
         };
@@ -224,8 +217,7 @@ impl CommandExecutor for EntitiesToPosExecutor {
             let pitch = target.get_entity().pitch.load();
             target
                 .clone()
-                .teleport(pos, Some(yaw), Some(pitch), world.clone())
-                .await;
+                .teleport(pos, Some(yaw), Some(pitch), world.clone());
         }
 
         Ok(())
@@ -234,9 +226,9 @@ impl CommandExecutor for EntitiesToPosExecutor {
 
 struct SelfToEntityExecutor;
 
-#[async_trait]
+
 impl CommandExecutor for SelfToEntityExecutor {
-    async fn execute<'a>(
+    fn execute<'a>(
         &self,
         sender: &mut CommandSender,
         _server: &crate::server::Server,
@@ -255,15 +247,10 @@ impl CommandExecutor for SelfToEntityExecutor {
                         TextComponent::translate("argument.pos.outofbounds", []),
                     )));
                 }
-                player
-                    .clone()
-                    .teleport(pos, Some(yaw), Some(pitch), world)
-                    .await;
+                player.clone().teleport(pos, Some(yaw), Some(pitch), world);
             }
             _ => {
-                sender
-                    .send_message(TextComponent::translate("permissions.requires.player", []))
-                    .await;
+                sender.send_message(TextComponent::translate("permissions.requires.player", []));
             }
         }
 
@@ -272,9 +259,9 @@ impl CommandExecutor for SelfToEntityExecutor {
 }
 struct SelfToPosExecutor;
 
-#[async_trait]
+
 impl CommandExecutor for SelfToPosExecutor {
-    async fn execute<'a>(
+    fn execute<'a>(
         &self,
         sender: &mut CommandSender,
         _server: &crate::server::Server,
@@ -292,13 +279,10 @@ impl CommandExecutor for SelfToPosExecutor {
                 }
                 player
                     .clone()
-                    .teleport(pos, Some(yaw), Some(pitch), player.world().clone())
-                    .await;
+                    .teleport(pos, Some(yaw), Some(pitch), player.world().clone());
             }
             _ => {
-                sender
-                    .send_message(TextComponent::translate("permissions.requires.player", []))
-                    .await;
+                sender.send_message(TextComponent::translate("permissions.requires.player", []));
             }
         }
 

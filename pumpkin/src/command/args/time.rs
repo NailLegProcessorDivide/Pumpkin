@@ -1,4 +1,3 @@
-use async_trait::async_trait;
 use pumpkin_protocol::java::client::play::{ArgumentType, CommandSuggestion, SuggestionProviders};
 
 use crate::command::{
@@ -21,9 +20,9 @@ impl GetClientSideArgParser for TimeArgumentConsumer {
     }
 }
 
-#[async_trait]
+
 impl ArgumentConsumer for TimeArgumentConsumer {
-    async fn consume<'a>(
+    fn consume<'a>(
         &'a self,
         _sender: &CommandSender,
         _server: &'a Server,
@@ -55,7 +54,7 @@ impl ArgumentConsumer for TimeArgumentConsumer {
         Some(Arg::Time(ticks))
     }
 
-    async fn suggest<'a>(
+    fn suggest<'a>(
         &'a self,
         _sender: &CommandSender,
         _server: &'a Server,

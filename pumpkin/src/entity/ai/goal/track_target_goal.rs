@@ -3,12 +3,12 @@ use crate::entity::ai::target_predicate::TargetPredicate;
 use crate::entity::living::LivingEntity;
 use crate::entity::mob::Mob;
 use crate::entity::{EntityBase, mob::MobEntity};
-use async_trait::async_trait;
+
 use rand::Rng;
 use std::sync::Arc;
 use std::sync::atomic::AtomicI32;
 use std::sync::atomic::Ordering::Relaxed;
-use tokio::sync::Mutex;
+use parking_lot::Mutex;
 
 const UNSET: i32 = 0;
 #[allow(dead_code)]
@@ -108,19 +108,19 @@ impl TrackTargetGoal {
     }
 }
 
-#[async_trait]
+
 impl Goal for TrackTargetGoal {
-    async fn can_start(&self, _mob: &dyn Mob) -> bool {
+    fn can_start(&self, _mob: &dyn Mob) -> bool {
         false
     }
 
-    async fn should_continue(&self, mob: &dyn Mob) -> bool {
+    fn should_continue(&self, mob: &dyn Mob) -> bool {
         let mob = mob.get_mob_entity();
-        let mob_target = mob.target.lock().await;
+        let mob_target = mob.target.lock();
         let target = if mob_target.is_some() {
             mob_target.clone()
         } else {
-            let lock = self.target.lock().await;
+            let lock = self.target.lock();
             lock.clone()
         };
         drop(mob_target);
@@ -131,19 +131,19 @@ impl Goal for TrackTargetGoal {
         true
     }
 
-    async fn start(&self, _mob: &dyn Mob) {
+    fn start(&self, _mob: &dyn Mob) {
         self.can_navigate_flag.store(0, Relaxed);
         self.check_can_navigate_cooldown.store(0, Relaxed);
         self.time_without_visibility.store(0, Relaxed);
     }
 
-    async fn stop(&self, mob: &dyn Mob) {
+    fn stop(&self, mob: &dyn Mob) {
         let mob = mob.get_mob_entity();
-        *mob.target.lock().await = None;
-        *self.target.lock().await = None;
+        *mob.target.lock() = None;
+        *self.target.lock() = None;
     }
 
-    async fn tick(&self, _mob: &dyn Mob) {}
+    fn tick(&self, _mob: &dyn Mob) {}
 
     fn get_goal_control(&self) -> &GoalControl {
         &self.goal_control

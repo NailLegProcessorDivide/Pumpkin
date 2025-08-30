@@ -1,4 +1,3 @@
-use async_trait::async_trait;
 use pumpkin_data::data_component::DataComponent::MaxStackSize;
 use pumpkin_data::data_component_impl::{MaxStackSizeImpl, get};
 use pumpkin_util::text::TextComponent;
@@ -30,9 +29,9 @@ fn item_count_consumer() -> BoundedNumArgumentConsumer<i32> {
 
 struct Executor;
 
-#[async_trait]
+
 impl CommandExecutor for Executor {
-    async fn execute<'a>(
+    fn execute<'a>(
         &self,
         sender: &mut CommandSender,
         _server: &crate::server::Server,
@@ -55,9 +54,9 @@ impl CommandExecutor for Executor {
                     }
                 };
 
-                sender
-                    .send_message(TextComponent::text(err_msg).color(Color::Named(NamedColor::Red)))
-                    .await;
+                sender.send_message(
+                    TextComponent::text(err_msg).color(Color::Named(NamedColor::Red)),
+                );
                 return Ok(());
             }
         };
@@ -76,9 +75,9 @@ impl CommandExecutor for Executor {
             while remaining > 0 {
                 let take = remaining.min(max_stack);
                 let mut stack = ItemStack::new(take as u8, item);
-                target.inventory().insert_stack_anywhere(&mut stack).await;
+                target.inventory().insert_stack_anywhere(&mut stack);
                 if !stack.is_empty() {
-                    target.drop_item(stack).await;
+                    target.drop_item(stack);
                 }
                 remaining -= take;
             }
@@ -95,7 +94,7 @@ impl CommandExecutor for Executor {
                             id: item_name.to_string().into(),
                             count: Some(item_count),
                         }),
-                    targets[0].get_display_name().await,
+                    targets[0].get_display_name(),
                 ],
             )
         } else {
@@ -114,7 +113,7 @@ impl CommandExecutor for Executor {
                 ],
             )
         };
-        sender.send_message(msg).await;
+        sender.send_message(msg);
 
         Ok(())
     }

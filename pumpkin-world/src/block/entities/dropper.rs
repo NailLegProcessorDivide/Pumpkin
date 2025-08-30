@@ -1,14 +1,14 @@
 use crate::block::entities::BlockEntity;
 use crate::inventory::{Clearable, Inventory, split_stack};
 use crate::item::ItemStack;
-use async_trait::async_trait;
+
+use parking_lot::{Mutex, MutexGuard};
 use pumpkin_util::math::position::BlockPos;
 use rand::{Rng, rng};
 use std::any::Any;
 use std::array::from_fn;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use tokio::sync::{Mutex, MutexGuard};
 
 #[derive(Debug)]
 pub struct DropperBlockEntity {
@@ -17,12 +17,11 @@ pub struct DropperBlockEntity {
     pub dirty: AtomicBool,
 }
 
-#[async_trait]
 impl BlockEntity for DropperBlockEntity {
-    async fn write_nbt(&self, nbt: &mut pumpkin_nbt::compound::NbtCompound) {
-        self.write_data(nbt, &self.items, true).await;
+    fn write_nbt(&self, nbt: &mut pumpkin_nbt::compound::NbtCompound) {
+        self.write_data(nbt, &self.items, true);
         // Safety precaution
-        //self.clear().await;
+        //self.clear();
     }
 
     fn from_nbt(nbt: &pumpkin_nbt::compound::NbtCompound, position: BlockPos) -> Self
@@ -70,12 +69,12 @@ impl DropperBlockEntity {
             dirty: AtomicBool::new(false),
         }
     }
-    pub async fn get_random_slot(&self) -> Option<MutexGuard<'_, ItemStack>> {
+    pub fn get_random_slot(&self) -> Option<MutexGuard<'_, ItemStack>> {
         // this.unpackLootTable(null);
         let mut ret = None;
         let mut j = 1;
         for i in &self.items {
-            let item = i.lock().await;
+            let item = i.lock();
             if !item.is_empty() {
                 if rng().random_range(0..j) == 0 {
                     ret = Some(item);
@@ -87,15 +86,14 @@ impl DropperBlockEntity {
     }
 }
 
-#[async_trait]
 impl Inventory for DropperBlockEntity {
     fn size(&self) -> usize {
         self.items.len()
     }
 
-    async fn is_empty(&self) -> bool {
+    fn is_empty(&self) -> bool {
         for slot in self.items.iter() {
-            if !slot.lock().await.is_empty() {
+            if !slot.lock().is_empty() {
                 return false;
             }
         }
@@ -103,23 +101,23 @@ impl Inventory for DropperBlockEntity {
         true
     }
 
-    async fn get_stack(&self, slot: usize) -> Arc<Mutex<ItemStack>> {
+    fn get_stack(&self, slot: usize) -> Arc<Mutex<ItemStack>> {
         self.items[slot].clone()
     }
 
-    async fn remove_stack(&self, slot: usize) -> ItemStack {
+    fn remove_stack(&self, slot: usize) -> ItemStack {
         let mut removed = ItemStack::EMPTY.clone();
-        let mut guard = self.items[slot].lock().await;
+        let mut guard = self.items[slot].lock();
         std::mem::swap(&mut removed, &mut *guard);
         removed
     }
 
-    async fn remove_stack_specific(&self, slot: usize, amount: u8) -> ItemStack {
-        split_stack(&self.items, slot, amount).await
+    fn remove_stack_specific(&self, slot: usize, amount: u8) -> ItemStack {
+        split_stack(&self.items, slot, amount)
     }
 
-    async fn set_stack(&self, slot: usize, stack: ItemStack) {
-        *self.items[slot].lock().await = stack;
+    fn set_stack(&self, slot: usize, stack: ItemStack) {
+        *self.items[slot].lock() = stack;
     }
 
     fn mark_dirty(&self) {
@@ -131,11 +129,10 @@ impl Inventory for DropperBlockEntity {
     }
 }
 
-#[async_trait]
 impl Clearable for DropperBlockEntity {
-    async fn clear(&self) {
+    fn clear(&self) {
         for slot in self.items.iter() {
-            *slot.lock().await = ItemStack::EMPTY.clone();
+            *slot.lock() = ItemStack::EMPTY.clone();
         }
     }
 }

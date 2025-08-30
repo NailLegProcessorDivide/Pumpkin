@@ -15,10 +15,7 @@ use pumpkin_protocol::{
 };
 use serde_json::Value;
 
-use crate::{
-    net::{ClientPlatform, DisconnectReason, GameProfile, bedrock::BedrockClient},
-    server::Server,
-};
+use crate::net::{ClientPlatform, DisconnectReason, GameProfile, bedrock::BedrockClient};
 use pumpkin_world::CURRENT_BEDROCK_MC_VERSION;
 
 impl BedrockClient {
@@ -27,7 +24,7 @@ impl BedrockClient {
             .await;
         self.set_compression(CompressionInfo::default()).await;
     }
-    pub async fn handle_login(self: &Arc<Self>, packet: SLogin, server: &Server) -> Option<()> {
+    pub async fn handle_login(self: &Arc<Self>, packet: SLogin) -> Option<()> {
         // This is a mess to extract the PlayerName
         // TODO Verify Player
         // This also contains the public key for encryption!

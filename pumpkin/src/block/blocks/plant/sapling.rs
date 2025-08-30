@@ -1,4 +1,4 @@
-use async_trait::async_trait;
+
 use pumpkin_data::block_properties::{BlockProperties, Integer0To1};
 use pumpkin_data::tag::{RegistryKey, get_tag_values};
 use pumpkin_macros::pumpkin_block_from_tag;
@@ -17,27 +17,24 @@ type SaplingProperties = pumpkin_data::block_properties::OakSaplingLikePropertie
 pub struct SaplingBlock;
 
 impl SaplingBlock {
-    async fn generate(&self, world: &Arc<World>, pos: &BlockPos) {
-        let (block, state) = world.get_block_and_state_id(pos).await;
+    fn generate(&self, world: &Arc<World>, pos: &BlockPos) {
+        let (block, state) = world.get_block_and_state_id(pos);
         let mut props = SaplingProperties::from_state_id(state, block);
         if props.stage == Integer0To1::L0 {
             props.stage = Integer0To1::L1;
-            world
-                .set_block_state(pos, props.to_state_id(block), BlockFlags::NOTIFY_ALL)
-                .await;
+            world.set_block_state(pos, props.to_state_id(block), BlockFlags::NOTIFY_ALL);
         } else {
             //TODO generate tree
         }
     }
 }
 
-#[async_trait]
 impl BlockBehaviour for SaplingBlock {
-    async fn can_place_at(&self, args: CanPlaceAtArgs<'_>) -> bool {
-        <Self as PlantBlockBase>::can_place_at(self, args.block_accessor, args.position).await
+    fn can_place_at(&self, args: CanPlaceAtArgs<'_>) -> bool {
+        <Self as PlantBlockBase>::can_place_at(self, args.block_accessor, args.position)
     }
 
-    async fn get_state_for_neighbor_update(
+    fn get_state_for_neighbor_update(
         &self,
         args: GetStateForNeighborUpdateArgs<'_>,
     ) -> BlockStateId {
@@ -47,11 +44,10 @@ impl BlockBehaviour for SaplingBlock {
             args.position,
             args.state_id,
         )
-        .await
     }
 
-    async fn random_tick(&self, args: RandomTickArgs<'_>) {
-        self.generate(args.world, args.position).await;
+    fn random_tick(&self, args: RandomTickArgs<'_>) {
+        self.generate(args.world, args.position);
     }
 }
 

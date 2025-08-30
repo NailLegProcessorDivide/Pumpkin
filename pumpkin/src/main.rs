@@ -41,6 +41,7 @@
 #[cfg(target_os = "wasi")]
 compile_error!("Compiling for WASI targets is not supported!");
 
+use parking_lot::RwLock;
 use plugin::PluginManager;
 use pumpkin_config::BASIC_CONFIG;
 use pumpkin_data::packet::CURRENT_MC_PROTOCOL;
@@ -52,7 +53,6 @@ use std::{
 use tokio::signal::ctrl_c;
 #[cfg(unix)]
 use tokio::signal::unix::{SignalKind, signal};
-use tokio::sync::RwLock;
 
 use pumpkin::{LOGGER_IMPL, PumpkinServer, SHOULD_STOP, STOP_INTERRUPT, init_log, stop_server};
 
@@ -98,7 +98,6 @@ const CARGO_PKG_VERSION: &str = env!("CARGO_PKG_VERSION");
 // WARNING: All rayon calls from the tokio runtime must be non-blocking! This includes things
 // like `par_iter`. These should be spawned in the the rayon pool and then passed to the tokio
 // runtime with a channel! See `Level::fetch_chunks` as an example!
-#[tokio::main]
 async fn main() {
     #[cfg(feature = "console-subscriber")]
     console_subscriber::init();
@@ -142,14 +141,8 @@ async fn main() {
     log::info!("Report issues on https://github.com/Pumpkin-MC/Pumpkin/issues");
     log::info!("Join our Discord for community support: https://discord.com/invite/wT8XjrjKkf");
 
-    tokio::spawn(async {
-        setup_sighandler()
-            .await
-            .expect("Unable to setup signal handlers");
-    });
-
-    let pumpkin_server = PumpkinServer::new().await;
-    pumpkin_server.init_plugins().await;
+    let pumpkin_server = PumpkinServer::new();
+    pumpkin_server.init_plugins();
 
     log::info!("Started server; took {}ms", time.elapsed().as_millis());
     log::info!(
@@ -171,7 +164,7 @@ async fn main() {
         }
     );
 
-    pumpkin_server.start().await;
+    pumpkin_server.start();
     log::info!("The server has stopped.");
 }
 

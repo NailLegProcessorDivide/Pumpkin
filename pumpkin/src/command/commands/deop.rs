@@ -9,7 +9,7 @@ use crate::{
     data::{SaveJSONConfiguration, op_data::OPERATOR_CONFIG},
 };
 use CommandError::InvalidConsumption;
-use async_trait::async_trait;
+
 use pumpkin_util::text::TextComponent;
 
 const NAMES: [&str; 1] = ["deop"];
@@ -18,15 +18,15 @@ const ARG_TARGETS: &str = "targets";
 
 struct Executor;
 
-#[async_trait]
+
 impl CommandExecutor for Executor {
-    async fn execute<'a>(
+    fn execute<'a>(
         &self,
         sender: &mut CommandSender,
         server: &crate::server::Server,
         args: &ConsumedArgs<'a>,
     ) -> Result<(), CommandError> {
-        let mut config = OPERATOR_CONFIG.write().await;
+        let mut config = OPERATOR_CONFIG.write();
 
         let Some(Arg::Players(targets)) = args.get(&ARG_TARGETS) else {
             return Err(InvalidConsumption(Some(ARG_TARGETS.into())));
@@ -43,17 +43,13 @@ impl CommandExecutor for Executor {
             config.save();
 
             {
-                let command_dispatcher = server.command_dispatcher.read().await;
-                player
-                    .set_permission_lvl(pumpkin_util::PermissionLvl::Zero, &command_dispatcher)
-                    .await;
+                let command_dispatcher = server.command_dispatcher.read();
+                player.set_permission_lvl(pumpkin_util::PermissionLvl::Zero, &command_dispatcher);
             };
 
-            let msg = TextComponent::translate(
-                "commands.deop.success",
-                [player.get_display_name().await],
-            );
-            sender.send_message(msg).await;
+            let msg =
+                TextComponent::translate("commands.deop.success", [player.get_display_name()]);
+            sender.send_message(msg);
         }
         Ok(())
     }

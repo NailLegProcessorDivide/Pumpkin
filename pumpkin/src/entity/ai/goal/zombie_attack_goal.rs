@@ -1,7 +1,7 @@
 use super::{Goal, GoalControl};
 use crate::entity::ai::goal::melee_attack_goal::MeleeAttackGoal;
 use crate::entity::mob::Mob;
-use async_trait::async_trait;
+
 use std::sync::atomic::AtomicI32;
 use std::sync::atomic::Ordering::Relaxed;
 
@@ -20,28 +20,28 @@ impl ZombieAttackGoal {
     }
 }
 
-#[async_trait]
+
 impl Goal for ZombieAttackGoal {
-    async fn can_start(&self, mob: &dyn Mob) -> bool {
-        self.melee_attack_goal.can_start(mob).await
+    fn can_start(&self, mob: &dyn Mob) -> bool {
+        self.melee_attack_goal.can_start(mob)
     }
 
-    async fn should_continue(&self, mob: &dyn Mob) -> bool {
-        self.melee_attack_goal.should_continue(mob).await
+    fn should_continue(&self, mob: &dyn Mob) -> bool {
+        self.melee_attack_goal.should_continue(mob)
     }
 
-    async fn start(&self, mob: &dyn Mob) {
-        self.melee_attack_goal.start(mob).await;
+    fn start(&self, mob: &dyn Mob) {
+        self.melee_attack_goal.start(mob);
         self.ticks.store(0, Relaxed);
     }
 
-    async fn stop(&self, mob: &dyn Mob) {
-        self.melee_attack_goal.stop(mob).await;
+    fn stop(&self, mob: &dyn Mob) {
+        self.melee_attack_goal.stop(mob);
         mob.get_mob_entity().set_attacking(false);
     }
 
-    async fn tick(&self, mob: &dyn Mob) {
-        self.melee_attack_goal.tick(mob).await;
+    fn tick(&self, mob: &dyn Mob) {
+        self.melee_attack_goal.tick(mob);
         let ticks = self.ticks.fetch_add(1, Relaxed) + 1;
         if ticks >= 5
             && self.melee_attack_goal.cooldown.load(Relaxed)

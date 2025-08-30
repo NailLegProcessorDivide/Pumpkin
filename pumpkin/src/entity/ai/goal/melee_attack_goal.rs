@@ -3,7 +3,7 @@ use crate::entity::EntityBase;
 use crate::entity::ai::path::NavigatorGoal;
 use crate::entity::mob::Mob;
 use crate::entity::predicate::EntityPredicate;
-use async_trait::async_trait;
+
 use crossbeam::atomic::AtomicCell;
 use pumpkin_util::math::vector3::Vector3;
 use std::sync::atomic::Ordering::Relaxed;
@@ -45,12 +45,12 @@ impl MeleeAttackGoal {
     }
 }
 
-#[async_trait]
+
 impl Goal for MeleeAttackGoal {
-    async fn can_start(&self, mob: &dyn Mob) -> bool {
+    fn can_start(&self, mob: &dyn Mob) -> bool {
         let time = {
             let world = &mob.get_entity().world;
-            let level_time = world.level_time.lock().await;
+            let level_time = world.level_time.lock();
             level_time.world_age
         };
 
@@ -58,7 +58,7 @@ impl Goal for MeleeAttackGoal {
             return false;
         }
         self.last_update_time.store(time, Relaxed);
-        let target = mob.get_mob_entity().target.lock().await;
+        let target = mob.get_mob_entity().target.lock();
         let Some(target) = target.as_ref() else {
             return false;
         };
@@ -69,8 +69,8 @@ impl Goal for MeleeAttackGoal {
         true //TODO: modify that because if a path to the target not exists then call mob.is_in_attack_range(target)
     }
 
-    async fn should_continue(&self, mob: &dyn Mob) -> bool {
-        let target = mob.get_mob_entity().target.lock().await;
+    fn should_continue(&self, mob: &dyn Mob) -> bool {
+        let target = mob.get_mob_entity().target.lock();
         let Some(target) = target.as_ref() else {
             return false;
         };
@@ -78,7 +78,7 @@ impl Goal for MeleeAttackGoal {
             return false;
         }
         if !self.pause_when_mob_idle {
-            return !mob.get_mob_entity().navigator.lock().await.is_idle();
+            return !mob.get_mob_entity().navigator.lock().is_idle();
         }
         if mob
             .get_mob_entity()
@@ -92,10 +92,10 @@ impl Goal for MeleeAttackGoal {
         }
     }
 
-    async fn start(&self, mob: &dyn Mob) {
+    fn start(&self, mob: &dyn Mob) {
         // TODO: add missing fields like mob attacking to true and correct Navigation methods
-        if let Some(target) = mob.get_mob_entity().target.lock().await.as_ref() {
-            let mut navigator = mob.get_mob_entity().navigator.lock().await;
+        if let Some(target) = mob.get_mob_entity().target.lock().as_ref() {
+            let mut navigator = mob.get_mob_entity().navigator.lock();
             navigator.set_progress(NavigatorGoal {
                 current_progress: mob.get_entity().pos.load(),
                 destination: target.get_entity().pos.load(),
@@ -106,26 +106,23 @@ impl Goal for MeleeAttackGoal {
         self.cooldown.store(0, Relaxed);
     }
 
-    async fn stop(&self, mob: &dyn Mob) {
-        let mut target = mob.get_mob_entity().target.lock().await;
+    fn stop(&self, mob: &dyn Mob) {
+        let mut target = mob.get_mob_entity().target.lock();
         if target.is_none() {
             return;
         }
-        if !EntityPredicate::ExceptCreativeOrSpectator
-            .test(mob.get_entity())
-            .await
-        {
+        if !EntityPredicate::ExceptCreativeOrSpectator.test(mob.get_entity()) {
             *target = None;
         }
 
         // TODO: set attacking to false and stop navigation
     }
 
-    async fn tick(&self, mob: &dyn Mob) {
+    fn tick(&self, mob: &dyn Mob) {
         // TODO: implement
         // This code is not Vanilla, tick method needs to be reimplemented
-        if let Some(target) = mob.get_mob_entity().target.lock().await.as_ref() {
-            let mut navigator = mob.get_mob_entity().navigator.lock().await;
+        if let Some(target) = mob.get_mob_entity().target.lock().as_ref() {
+            let mut navigator = mob.get_mob_entity().navigator.lock();
             navigator.set_progress(NavigatorGoal {
                 current_progress: mob.get_entity().pos.load(),
                 destination: target.get_entity().pos.load(),

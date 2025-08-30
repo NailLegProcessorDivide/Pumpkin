@@ -3,7 +3,7 @@ use crate::item::ItemBehaviour;
 use crate::item::ItemMetadata;
 use crate::server::Server;
 use crate::world::World;
-use async_trait::async_trait;
+
 use pumpkin_data::Block;
 use pumpkin_data::BlockDirection;
 use pumpkin_data::item::Item;
@@ -22,9 +22,9 @@ impl ItemMetadata for FlintAndSteelItem {
     }
 }
 
-#[async_trait]
+
 impl ItemBehaviour for FlintAndSteelItem {
-    async fn use_on_block(
+    fn use_on_block(
         &self,
         _item: &mut ItemStack,
         player: &Player,
@@ -37,7 +37,7 @@ impl ItemBehaviour for FlintAndSteelItem {
             |world: Arc<World>, pos: BlockPos, new_state_id: u16| async move {
                 world
                     .set_block_state(&pos, new_state_id, BlockFlags::NOTIFY_ALL)
-                    .await;
+                    ;
             },
             player,
             location,
@@ -45,7 +45,7 @@ impl ItemBehaviour for FlintAndSteelItem {
             block,
             server,
         )
-        .await;
+        ;
     }
 
     fn as_any(&self) -> &dyn std::any::Any {

@@ -43,16 +43,11 @@ impl ServerPlayerData {
     ///
     /// A Result indicating success or the error that occurred.
     pub async fn handle_player_leave(&self, player: &Player) -> Result<(), PlayerDataError> {
-        player
-            .player_screen_handler
-            .lock()
-            .await
-            .on_closed(player)
-            .await;
-        player.on_handled_screen_closed().await;
+        player.player_screen_handler.lock().on_closed(player);
+        player.on_handled_screen_closed();
 
         let mut nbt = NbtCompound::new();
-        player.write_nbt(&mut nbt).await;
+        player.write_nbt(&mut nbt);
 
         // Save to disk
         self.storage.save_player_data(&player.gameprofile.id, nbt)?;
@@ -64,7 +59,7 @@ impl ServerPlayerData {
     ///
     /// This function should be called regularly to save player data and clean
     /// expired cache entries.
-    pub async fn tick(&self, server: &Server) -> Result<(), PlayerDataError> {
+    pub fn tick(&self, server: &Server) -> Result<(), PlayerDataError> {
         let now = Instant::now();
 
         // Only save players periodically based on save_interval
@@ -74,10 +69,10 @@ impl ServerPlayerData {
         if should_save && self.storage.is_save_enabled() {
             self.last_save.store(now);
             // Save all online players periodically across all worlds
-            for world in server.worlds.read().await.iter() {
-                for player in world.players.read().await.values() {
+            for world in server.worlds.read().iter() {
+                for player in world.players.read().values() {
                     let mut nbt = NbtCompound::new();
-                    player.write_nbt(&mut nbt).await;
+                    player.write_nbt(&mut nbt);
 
                     // Save to disk periodically to prevent data loss on server crash
                     if let Err(e) = self.storage.save_player_data(&player.gameprofile.id, nbt) {
@@ -99,13 +94,13 @@ impl ServerPlayerData {
     ///
     /// This function immediately saves all online players' data to disk.
     /// Useful for server shutdown or backup operations.
-    pub async fn save_all_players(&self, server: &Server) -> Result<(), PlayerDataError> {
+    pub fn save_all_players(&self, server: &Server) -> Result<(), PlayerDataError> {
         let mut total_players = 0;
 
         // Save players from all worlds
-        for world in server.worlds.read().await.iter() {
-            for player in world.players.read().await.values() {
-                self.extract_data_and_save_player(player).await?;
+        for world in server.worlds.read().iter() {
+            for player in world.players.read().values() {
+                self.extract_data_and_save_player(player)?;
                 total_players += 1;
             }
         }
@@ -160,17 +155,14 @@ impl ServerPlayerData {
     /// # Returns
     ///
     /// A Result indicating success or the error that occurred.
-    pub async fn extract_data_and_save_player(
-        &self,
-        player: &Player,
-    ) -> Result<(), PlayerDataError> {
+    pub fn extract_data_and_save_player(&self, player: &Player) -> Result<(), PlayerDataError> {
         if !self.storage.is_save_enabled() {
             return Ok(());
         }
 
         let uuid = &player.gameprofile.id;
         let mut nbt = NbtCompound::new();
-        player.write_nbt(&mut nbt).await;
+        player.write_nbt(&mut nbt);
         self.storage.save_player_data(uuid, nbt)
     }
 }

@@ -9,7 +9,7 @@ pub mod native;
 #[async_trait]
 pub trait PluginLoader: Send + Sync {
     /// Load a plugin from the specified path
-    async fn load(
+    fn load(
         &self,
         path: &Path,
     ) -> Result<
@@ -24,7 +24,7 @@ pub trait PluginLoader: Send + Sync {
     /// Check if this loader can handle the given file
     fn can_load(&self, path: &Path) -> bool;
 
-    async fn unload(&self, data: Box<dyn Any + Send + Sync>) -> Result<(), LoaderError>;
+    fn unload(&self, data: Box<dyn Any + Send + Sync>) -> Result<(), LoaderError>;
 
     /// Checks if the plugin can be safely unloaded.
     fn can_unload(&self) -> bool;

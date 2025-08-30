@@ -1,5 +1,5 @@
 use crate::block::{BlockBehaviour, BlockMetadata, OnPlaceArgs};
-use async_trait::async_trait;
+
 use pumpkin_data::block_properties::{BlockProperties, WallTorchLikeProperties};
 use pumpkin_data::tag::{RegistryKey, get_tag_values};
 use pumpkin_world::BlockStateId;
@@ -15,9 +15,8 @@ impl BlockMetadata for GlazedTerracottaBlock {
     }
 }
 
-#[async_trait]
 impl BlockBehaviour for GlazedTerracottaBlock {
-    async fn on_place(&self, args: OnPlaceArgs<'_>) -> BlockStateId {
+    fn on_place(&self, args: OnPlaceArgs<'_>) -> BlockStateId {
         let mut prop = WallTorchLikeProperties::default(args.block);
         prop.facing = args
             .player

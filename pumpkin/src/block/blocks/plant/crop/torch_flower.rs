@@ -1,4 +1,4 @@
-use async_trait::async_trait;
+
 use pumpkin_data::Block;
 use pumpkin_data::block_properties::{
     BlockProperties, EnumVariants, Integer0To1, TorchflowerCropLikeProperties,
@@ -16,14 +16,12 @@ type TorchFlowerProperties = TorchflowerCropLikeProperties;
 #[pumpkin_block("minecraft:torchflower_crop")]
 pub struct TorchFlowerBlock;
 
-#[async_trait]
 impl BlockBehaviour for TorchFlowerBlock {
-    async fn can_place_at(&self, args: CanPlaceAtArgs<'_>) -> bool {
+    fn can_place_at(&self, args: CanPlaceAtArgs<'_>) -> bool {
         <Self as CropBlockBase>::can_plant_on_top(self, args.block_accessor, &args.position.down())
-            .await
     }
 
-    async fn get_state_for_neighbor_update(
+    fn get_state_for_neighbor_update(
         &self,
         args: GetStateForNeighborUpdateArgs<'_>,
     ) -> BlockStateId {
@@ -33,12 +31,11 @@ impl BlockBehaviour for TorchFlowerBlock {
             args.position,
             args.state_id,
         )
-        .await
     }
 
-    async fn random_tick(&self, args: RandomTickArgs<'_>) {
+    fn random_tick(&self, args: RandomTickArgs<'_>) {
         if rand::rng().random_range(0..2) != 0 {
-            <Self as CropBlockBase>::random_tick(self, args.world, args.position).await;
+            <Self as CropBlockBase>::random_tick(self, args.world, args.position);
         }
     }
 }

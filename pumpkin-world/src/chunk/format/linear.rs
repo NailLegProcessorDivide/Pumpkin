@@ -1,4 +1,4 @@
-use std::io::{ErrorKind, Read};
+use std::io::{ErrorKind, Read, Write};
 use std::marker::PhantomData;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -6,13 +6,14 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use crate::chunk::format::anvil::{AnvilChunkFile, SingleChunkDataSerializer};
 use crate::chunk::io::{ChunkSerializer, LoadedData};
 use crate::chunk::{ChunkReadingError, ChunkWritingError};
-use async_trait::async_trait;
+
 use bytes::{Buf, BufMut, Bytes};
+use crossbeam::channel::Sender;
 use log::error;
 use pumpkin_util::math::vector2::Vector2;
 use ruzstd::decoding::StreamingDecoder;
 use ruzstd::encoding::{CompressionLevel, compress_to_vec};
-use tokio::io::{AsyncWriteExt, BufWriter};
+use std::io::BufWriter;
 
 use super::anvil::CHUNK_COUNT;
 
@@ -163,7 +164,6 @@ impl<S: SingleChunkDataSerializer> Default for LinearFile<S> {
     }
 }
 
-#[async_trait]
 impl<S: SingleChunkDataSerializer> ChunkSerializer for LinearFile<S> {
     type Data = S;
     type WriteBackend = PathBuf;
@@ -177,17 +177,16 @@ impl<S: SingleChunkDataSerializer> ChunkSerializer for LinearFile<S> {
         format!("./r.{region_x}.{region_z}.linear")
     }
 
-    async fn write(&self, path: PathBuf) -> Result<(), std::io::Error> {
+    fn write(&self, path: PathBuf) -> Result<(), std::io::Error> {
         let temp_path = path.with_extension("tmp");
         log::trace!("Writing tmp file to disk: {:?}", temp_path);
 
-        let file = tokio::fs::OpenOptions::new()
+        let file = std::fs::OpenOptions::new()
             .read(false)
             .write(true)
             .create(true)
             .truncate(true)
-            .open(&temp_path)
-            .await?;
+            .open(&temp_path)?;
 
         let mut write = BufWriter::new(file);
 
@@ -225,16 +224,16 @@ impl<S: SingleChunkDataSerializer> ChunkSerializer for LinearFile<S> {
         }
         .to_bytes();
 
-        write.write_all(&SIGNATURE).await?;
-        write.write_all(&file_header).await?;
-        write.write_all(&compressed_buffer).await?;
-        write.write_all(&SIGNATURE).await?;
+        write.write_all(&SIGNATURE)?;
+        write.write_all(&file_header)?;
+        write.write_all(&compressed_buffer)?;
+        write.write_all(&SIGNATURE)?;
 
-        write.flush().await?;
+        write.flush()?;
 
         // The rename of the file works like an atomic operation ensuring
         // that the data is not corrupted before the rename is completed
-        tokio::fs::rename(temp_path, &path).await?;
+        std::fs::rename(temp_path, &path)?;
 
         log::trace!("Wrote file to Disk: {:?}", path);
         Ok(())
@@ -321,11 +320,10 @@ impl<S: SingleChunkDataSerializer> ChunkSerializer for LinearFile<S> {
         })
     }
 
-    async fn update_chunk(&mut self, chunk: &Self::Data) -> Result<(), ChunkWritingError> {
+    fn update_chunk(&mut self, chunk: &Self::Data) -> Result<(), ChunkWritingError> {
         let index = LinearFile::<S>::get_chunk_index(chunk.position());
         let chunk_raw: Bytes = chunk
             .to_bytes()
-            .await
             .map_err(|err| ChunkWritingError::ChunkSerializingError(err.to_string()))?;
 
         let header = &mut self.chunks_headers[index];
@@ -341,10 +339,10 @@ impl<S: SingleChunkDataSerializer> ChunkSerializer for LinearFile<S> {
         Ok(())
     }
 
-    async fn get_chunks(
+    fn get_chunks(
         &self,
         chunks: &[Vector2<i32>],
-        stream: tokio::sync::mpsc::Sender<LoadedData<Self::Data, ChunkReadingError>>,
+        stream: Sender<LoadedData<Self::Data, ChunkReadingError>>,
     ) {
         // Don't par iter here so we can prevent backpressure with the await in the async
         // runtime
@@ -361,7 +359,7 @@ impl<S: SingleChunkDataSerializer> ChunkSerializer for LinearFile<S> {
                 LoadedData::Missing(chunk)
             };
 
-            if stream.send(result).await.is_err() {
+            if stream.send(result).is_err() {
                 // The stream is closed. Return early to prevent unneeded work and IO
                 return;
             }
@@ -371,8 +369,10 @@ impl<S: SingleChunkDataSerializer> ChunkSerializer for LinearFile<S> {
 
 #[cfg(test)]
 mod tests {
-    use async_trait::async_trait;
+
     use core::panic;
+    use crossbeam::channel::bounded;
+    use parking_lot::RwLock;
     use pumpkin_data::BlockDirection;
     use pumpkin_util::math::position::BlockPos;
     use pumpkin_util::math::vector2::Vector2;
@@ -380,7 +380,6 @@ mod tests {
     use std::path::PathBuf;
     use std::sync::Arc;
     use temp_dir::TempDir;
-    use tokio::sync::RwLock;
 
     use crate::chunk::ChunkData;
     use crate::chunk::format::linear::LinearFile;
@@ -393,7 +392,6 @@ mod tests {
 
     struct BlockRegistry;
 
-    #[async_trait]
     impl BlockRegistryExt for BlockRegistry {
         fn can_place_at(
             &self,
@@ -406,35 +404,33 @@ mod tests {
         }
     }
 
-    #[tokio::test(flavor = "multi_thread")]
-    async fn not_existing() {
+    #[test]
+    fn not_existing() {
         let region_path = PathBuf::from("not_existing");
         let chunk_saver = ChunkFileManager::<LinearFile<ChunkData>>::default();
 
         let mut chunks = Vec::new();
-        let (send, mut recv) = tokio::sync::mpsc::channel(1);
+        let (send, recv) = bounded(1);
 
-        chunk_saver
-            .fetch_chunks(
-                &LevelFolder {
-                    root_folder: PathBuf::from(""),
-                    region_folder: region_path,
-                    entities_folder: PathBuf::from(""),
-                },
-                &[Vector2::new(0, 0)],
-                send,
-            )
-            .await;
+        chunk_saver.fetch_chunks(
+            &LevelFolder {
+                root_folder: PathBuf::from(""),
+                region_folder: region_path,
+                entities_folder: PathBuf::from(""),
+            },
+            &[Vector2::new(0, 0)],
+            send,
+        );
 
-        while let Some(data) = recv.recv().await {
+        while let Ok(data) = recv.recv() {
             chunks.push(data);
         }
 
         assert!(chunks.len() == 1 && matches!(chunks[0], LoadedData::Missing(_)));
     }
 
-    #[tokio::test(flavor = "multi_thread")]
-    async fn test_writing() {
+    #[test]
+    fn test_writing() {
         let _ = env_logger::try_init();
 
         let generator = get_world_gen(Seed(0), Dimension::Overworld);
@@ -468,7 +464,7 @@ mod tests {
             println!("Iteration {}", i + 1);
             // Mark the chunks as dirty so we save them again
             for (_, chunk) in &chunks {
-                let mut chunk = chunk.write().await;
+                let mut chunk = chunk.write();
                 chunk.dirty = true;
             }
 
@@ -477,22 +473,16 @@ mod tests {
                     &level_folder,
                     chunks.clone().into_iter().collect::<Vec<_>>(),
                 )
-                .await
                 .expect("Failed to write chunk");
 
             let mut read_chunks = Vec::new();
-            let (send, mut recv) = tokio::sync::mpsc::channel(1);
+            let (send, recv) = bounded(1);
 
             let chunk_pos = chunks.iter().map(|(at, _)| *at).collect::<Vec<_>>();
-            let spawn = chunk_saver.fetch_chunks(&level_folder, &chunk_pos, send);
-
-            let collect = async {
-                while let Some(data) = recv.recv().await {
-                    read_chunks.push(data);
-                }
-            };
-
-            tokio::join!(spawn, collect);
+            chunk_saver.fetch_chunks(&level_folder, &chunk_pos, send);
+            while let Ok(data) = recv.recv() {
+                read_chunks.push(data);
+            }
 
             let read_chunks = read_chunks
                 .into_iter()
@@ -506,9 +496,9 @@ mod tests {
                 .collect::<Vec<_>>();
 
             for (_, chunk) in &chunks {
-                let chunk = chunk.read().await;
+                let chunk = chunk.read();
                 for read_chunk in read_chunks.iter() {
-                    let read_chunk = read_chunk.read().await;
+                    let read_chunk = read_chunk.read();
                     if read_chunk.position == chunk.position {
                         let original = chunk.section.dump_blocks();
                         let read = read_chunk.section.dump_blocks();

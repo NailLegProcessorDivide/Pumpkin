@@ -1,20 +1,17 @@
-use async_trait::async_trait;
 use bytes::*;
+use crossbeam::channel::Sender;
 use flate2::read::{GzDecoder, GzEncoder, ZlibDecoder, ZlibEncoder};
 use itertools::Itertools;
 use lz4_java_wrc::Context;
+use parking_lot::Mutex;
 use pumpkin_config::advanced_config;
 use pumpkin_util::math::vector2::Vector2;
 use std::{
     collections::HashSet,
-    io::{Read, SeekFrom, Write},
+    io::{BufWriter, Read, Seek, SeekFrom, Write},
     marker::PhantomData,
     path::{Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
-};
-use tokio::{
-    io::{AsyncSeekExt, AsyncWrite, AsyncWriteExt, BufWriter},
-    sync::Mutex,
 };
 
 use crate::chunk::{
@@ -279,20 +276,17 @@ impl AnvilChunkData {
         })
     }
 
-    async fn write(&self, w: &mut (impl AsyncWrite + Unpin + Send)) -> Result<(), std::io::Error> {
+    fn write(&self, w: &mut (impl Unpin + Send + Write)) -> Result<(), std::io::Error> {
         let padded_size = self.padded_size();
 
-        w.write_u32((self.compressed_data.remaining() + 1) as u32)
-            .await?;
-        w.write_u8(
-            self.compression
-                .map_or(Compression::NO_COMPRESSION_ID, |c| c as u8),
-        )
-        .await?;
+        w.write_all(&((self.compressed_data.remaining() + 1) as u32).to_be_bytes())?;
+        w.write_all(&[self
+            .compression
+            .map_or(Compression::NO_COMPRESSION_ID, |c| c as u8)])?;
 
-        w.write_all(&self.compressed_data).await?;
+        w.write_all(&self.compressed_data)?;
         for _ in 0..(padded_size - self.raw_write_size()) {
-            w.write_u8(0).await?;
+            w.write_all(&[0])?;
         }
 
         Ok(())
@@ -313,16 +307,12 @@ impl AnvilChunkData {
         }
     }
 
-    async fn from_chunk<S>(
-        chunk: &S,
-        compression: Option<Compression>,
-    ) -> Result<Self, ChunkWritingError>
+    fn from_chunk<S>(chunk: &S, compression: Option<Compression>) -> Result<Self, ChunkWritingError>
     where
         S: SingleChunkDataSerializer,
     {
         let raw_bytes = chunk
             .to_bytes()
-            .await
             .map_err(|err| ChunkWritingError::ChunkSerializingError(err.to_string()))?;
 
         let compression = compression
@@ -353,17 +343,16 @@ impl<S: SingleChunkDataSerializer> AnvilChunkFile<S> {
         index as usize
     }
 
-    async fn write_indices(&self, path: &Path, indices: &[usize]) -> Result<(), std::io::Error> {
+    fn write_indices(&self, path: &Path, indices: &[usize]) -> Result<(), std::io::Error> {
         log::trace!("Writing in place: {path:?}");
 
-        let file = tokio::fs::OpenOptions::new()
+        let file = std::fs::OpenOptions::new()
             .read(false)
             .write(true)
             .create(true)
             .truncate(false)
             .append(false)
-            .open(path)
-            .await?;
+            .open(path)?;
 
         let mut write = BufWriter::new(file);
         // The first two sectors are reserved for the location table
@@ -377,21 +366,19 @@ impl<S: SingleChunkDataSerializer> AnvilChunkFile<S> {
                     chunk.file_sector_offset,
                     sector_count
                 );
-                write
-                    .write_u32((chunk.file_sector_offset << 8) | sector_count)
-                    .await?;
+                write.write_all(&((chunk.file_sector_offset << 8) | sector_count).to_be_bytes())?;
             } else {
                 // If the chunk is not present, we write 0 to the location and timestamp tables
-                write.write_u32(0).await?;
+                write.write_all(&0u32.to_be_bytes())?;
             };
         }
 
         for metadata in &self.chunks_data {
             if let Some(chunk) = metadata {
-                write.write_u32(chunk.timestamp).await?;
+                write.write_all(&chunk.timestamp.to_be_bytes())?;
             } else {
                 // If the chunk is not present, we write 0 to the location and timestamp tables
-                write.write_u32(0).await?;
+                write.write_all(&0u32.to_be_bytes())?;
             }
         }
 
@@ -413,7 +400,9 @@ impl<S: SingleChunkDataSerializer> AnvilChunkFile<S> {
         #[cfg(debug_assertions)]
         {
             // Verify we are actually two sectors into the file
-            let current_pos = write.stream_position().await?;
+
+            use std::io::Seek;
+            let current_pos = write.stream_position()?;
             assert!(current_pos as usize == 2 * SECTOR_BYTES);
         }
 
@@ -429,11 +418,9 @@ impl<S: SingleChunkDataSerializer> AnvilChunkFile<S> {
             // Seek only if we need to
             if chunk.file_sector_offset != current_sector {
                 log::trace!("Seeking to sector {}", chunk.file_sector_offset);
-                let _ = write
-                    .seek(SeekFrom::Start(
-                        chunk.file_sector_offset as u64 * SECTOR_BYTES as u64,
-                    ))
-                    .await?;
+                let _ = write.seek(SeekFrom::Start(
+                    chunk.file_sector_offset as u64 * SECTOR_BYTES as u64,
+                ))?;
                 current_sector = chunk.file_sector_offset;
             }
             log::trace!(
@@ -445,24 +432,23 @@ impl<S: SingleChunkDataSerializer> AnvilChunkFile<S> {
 
             current_sector += chunk.serialized_data.sector_count();
 
-            chunk.serialized_data.write(&mut write).await?;
+            chunk.serialized_data.write(&mut write)?;
         }
 
-        write.flush().await
+        write.flush()
     }
 
     /// Write entire file, disregarding saved offsets
-    async fn write_all(&self, path: &Path) -> Result<(), std::io::Error> {
+    fn write_all(&self, path: &Path) -> Result<(), std::io::Error> {
         let temp_path = path.with_extension("tmp");
         log::trace!("Writing tmp file to disk: {temp_path:?}");
 
-        let file = tokio::fs::OpenOptions::new()
+        let file = std::fs::OpenOptions::new()
             .read(false)
             .write(true)
             .create(true)
             .truncate(true)
-            .open(&temp_path)
-            .await?;
+            .open(&temp_path)?;
 
         let mut write = BufWriter::new(file);
 
@@ -472,33 +458,31 @@ impl<S: SingleChunkDataSerializer> AnvilChunkFile<S> {
             if let Some(chunk) = metadata {
                 let chunk = &chunk.serialized_data;
                 let sector_count = chunk.sector_count();
-                write
-                    .write_u32((current_sector << 8) | sector_count)
-                    .await?;
+                write.write_all(&((current_sector << 8) | sector_count).to_be_bytes())?;
                 current_sector += sector_count;
             } else {
                 // If the chunk is not present, we write 0 to the location and timestamp tables
-                write.write_u32(0).await?;
+                write.write_all(&0u32.to_be_bytes())?;
             };
         }
 
         for metadata in &self.chunks_data {
             if let Some(chunk) = metadata {
-                write.write_u32(chunk.timestamp).await?;
+                write.write_all(&chunk.timestamp.to_be_bytes())?;
             } else {
                 // If the chunk is not present, we write 0 to the location and timestamp tables
-                write.write_u32(0).await?;
+                write.write_all(&0u32.to_be_bytes())?;
             }
         }
 
         for chunk in self.chunks_data.iter().flatten() {
-            chunk.serialized_data.write(&mut write).await?;
+            chunk.serialized_data.write(&mut write)?;
         }
 
-        write.flush().await?;
+        write.flush()?;
         // The rename of the file works like an atomic operation ensuring
         // that the data is not corrupted before the rename is completed
-        tokio::fs::rename(temp_path, path).await?;
+        std::fs::rename(temp_path, path)?;
 
         log::trace!("Wrote file to Disk: {path:?}");
         Ok(())
@@ -517,14 +501,12 @@ impl<S: SingleChunkDataSerializer> Default for AnvilChunkFile<S> {
     }
 }
 
-#[async_trait]
 pub trait SingleChunkDataSerializer: Send + Sync + Sized + Dirtiable {
-    async fn to_bytes(&self) -> Result<Bytes, ChunkSerializingError>;
+    fn to_bytes(&self) -> Result<Bytes, ChunkSerializingError>;
     fn from_bytes(bytes: Bytes, pos: Vector2<i32>) -> Result<Self, ChunkReadingError>;
     fn position(&self) -> &Vector2<i32>;
 }
 
-#[async_trait]
 impl<S: SingleChunkDataSerializer> ChunkSerializer for AnvilChunkFile<S> {
     type Data = S;
     type WriteBackend = PathBuf;
@@ -538,17 +520,16 @@ impl<S: SingleChunkDataSerializer> ChunkSerializer for AnvilChunkFile<S> {
         format!("./r.{region_x}.{region_z}.mca")
     }
 
-    async fn write(&self, path: PathBuf) -> Result<(), std::io::Error> {
-        let mut write_action = self.write_action.lock().await;
+    fn write(&self, path: PathBuf) -> Result<(), std::io::Error> {
+        let mut write_action = self.write_action.lock();
         match &*write_action {
             WriteAction::Pass => {
                 log::debug!("Skipping write for {path:?} as there were no dirty chunks");
                 Ok(())
             }
-            WriteAction::All => self.write_all(&path).await,
+            WriteAction::All => self.write_all(&path),
             WriteAction::Parts(parts) => {
                 self.write_indices(&path, Vec::from_iter(parts.iter().cloned()).as_slice())
-                    .await
             }
         }?;
 
@@ -618,7 +599,7 @@ impl<S: SingleChunkDataSerializer> ChunkSerializer for AnvilChunkFile<S> {
         Ok(chunk_file)
     }
 
-    async fn update_chunk(&mut self, chunk: &Self::Data) -> Result<(), ChunkWritingError> {
+    fn update_chunk(&mut self, chunk: &Self::Data) -> Result<(), ChunkWritingError> {
         let epoch = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
@@ -629,9 +610,9 @@ impl<S: SingleChunkDataSerializer> ChunkSerializer for AnvilChunkFile<S> {
         let compression_type = self.chunks_data[index]
             .as_ref()
             .and_then(|chunk_data| chunk_data.serialized_data.compression);
-        let new_chunk_data = AnvilChunkData::from_chunk(chunk, compression_type).await?;
+        let new_chunk_data = AnvilChunkData::from_chunk(chunk, compression_type)?;
 
-        let mut write_action = self.write_action.lock().await;
+        let mut write_action = self.write_action.lock();
         if !advanced_config().chunk.write_in_place {
             *write_action = WriteAction::All;
         }
@@ -789,17 +770,17 @@ impl<S: SingleChunkDataSerializer> ChunkSerializer for AnvilChunkFile<S> {
         Ok(())
     }
 
-    async fn get_chunks(
+    fn get_chunks(
         &self,
         chunks: &[Vector2<i32>],
-        stream: tokio::sync::mpsc::Sender<LoadedData<Self::Data, ChunkReadingError>>,
+        stream: Sender<LoadedData<Self::Data, ChunkReadingError>>,
     ) {
         // Don't par iter here so we can prevent backpressure with the await in the async
         // runtime
         for chunk in chunks.iter().cloned() {
             let index = AnvilChunkFile::<S>::get_chunk_index(&chunk);
             let is_ok = match &self.chunks_data[index] {
-                None => stream.send(LoadedData::Missing(chunk)).await.is_ok(),
+                None => stream.send(LoadedData::Missing(chunk)).is_ok(),
                 Some(chunk_metadata) => {
                     let chunk_data = &chunk_metadata.serialized_data;
                     let result = match chunk_data.to_chunk(chunk) {
@@ -807,7 +788,7 @@ impl<S: SingleChunkDataSerializer> ChunkSerializer for AnvilChunkFile<S> {
                         Err(err) => LoadedData::Error((chunk, err)),
                     };
 
-                    stream.send(result).await.is_ok()
+                    stream.send(result).is_ok()
                 }
             };
 
@@ -821,7 +802,8 @@ impl<S: SingleChunkDataSerializer> ChunkSerializer for AnvilChunkFile<S> {
 
 #[cfg(test)]
 mod tests {
-    use async_trait::async_trait;
+    use crossbeam::channel::bounded;
+    use parking_lot::RwLock;
     use pumpkin_config::{AdvancedConfiguration, advanced_config, override_config_for_testing};
     use pumpkin_data::BlockDirection;
     use pumpkin_util::math::position::BlockPos;
@@ -830,7 +812,6 @@ mod tests {
     use std::path::PathBuf;
     use std::sync::Arc;
     use temp_dir::TempDir;
-    use tokio::sync::RwLock;
 
     use crate::chunk::ChunkData;
     use crate::chunk::format::anvil::{AnvilChunkFile, SingleChunkDataSerializer};
@@ -843,7 +824,6 @@ mod tests {
 
     struct BlockRegistry;
 
-    #[async_trait]
     impl BlockRegistryExt for BlockRegistry {
         fn can_place_at(
             &self,
@@ -856,7 +836,8 @@ mod tests {
         }
     }
 
-    async fn get_chunks<S>(
+    // #[test]
+    fn get_chunks<S>(
         saver: &ChunkFileManager<AnvilChunkFile<S>>,
         folder: &LevelFolder,
         chunks: &[(Vector2<i32>, SyncChunk)],
@@ -865,17 +846,15 @@ mod tests {
         S: SingleChunkDataSerializer + PathFromLevelFolder + 'static,
     {
         let mut read_chunks = Vec::new();
-        let (send, mut recv) = tokio::sync::mpsc::channel(1);
+        let (send, recv) = bounded(1);
 
         let chunk_pos = chunks.iter().map(|(at, _)| *at).collect::<Vec<_>>();
-        let spawn = saver.fetch_chunks(folder, &chunk_pos, send);
-        let collect = async {
-            while let Some(data) = recv.recv().await {
-                read_chunks.push(data);
-            }
-        };
 
-        tokio::join!(spawn, collect);
+        // NOTE: spawn and collect used to evaluate in parallel, is this worth while?
+        saver.fetch_chunks(folder, &chunk_pos, send);
+        while let Ok(data) = recv.recv() {
+            read_chunks.push(data);
+        }
 
         let read_chunks = read_chunks
             .into_iter()
@@ -891,35 +870,33 @@ mod tests {
         read_chunks.into_boxed_slice()
     }
 
-    #[tokio::test(flavor = "multi_thread")]
-    async fn not_existing() {
+    #[test]
+    fn not_existing() {
         let region_path = PathBuf::from("not_existing");
         let chunk_saver = ChunkFileManager::<AnvilChunkFile<ChunkData>>::default();
 
         let mut chunks = Vec::new();
-        let (send, mut recv) = tokio::sync::mpsc::channel(1);
+        let (send, recv) = bounded(1);
 
-        chunk_saver
-            .fetch_chunks(
-                &LevelFolder {
-                    root_folder: PathBuf::from(""),
-                    region_folder: region_path,
-                    entities_folder: PathBuf::from(""),
-                },
-                &[Vector2::new(0, 0)],
-                send,
-            )
-            .await;
+        chunk_saver.fetch_chunks(
+            &LevelFolder {
+                root_folder: PathBuf::from(""),
+                region_folder: region_path,
+                entities_folder: PathBuf::from(""),
+            },
+            &[Vector2::new(0, 0)],
+            send,
+        );
 
-        while let Some(data) = recv.recv().await {
+        while let Ok(data) = recv.recv() {
             chunks.push(data);
         }
 
         assert!(chunks.len() == 1 && matches!(chunks[0], LoadedData::Missing(_)));
     }
 
-    #[tokio::test(flavor = "multi_thread")]
-    async fn test_write_in_place() {
+    #[test]
+    fn test_write_in_place() {
         let mut config = AdvancedConfiguration::default();
         config.chunk.write_in_place = true;
         override_config_for_testing(config);
@@ -959,17 +936,16 @@ mod tests {
 
         chunk_saver
             .save_chunks(&level_folder, chunks.clone())
-            .await
             .expect("Failed to write chunk");
 
         // Create a new manager to ensure nothing is cached
         let chunk_saver = ChunkFileManager::<AnvilChunkFile<ChunkData>>::default();
-        let read_chunks = get_chunks(&chunk_saver, &level_folder, &chunks).await;
+        let read_chunks = get_chunks(&chunk_saver, &level_folder, &chunks);
 
         for (_, chunk) in &chunks {
-            let chunk = chunk.read().await;
+            let chunk = chunk.read();
             for read_chunk in read_chunks.iter() {
-                let read_chunk = read_chunk.read().await;
+                let read_chunk = read_chunk.read();
                 if read_chunk.position == chunk.position {
                     let original = chunk.section.dump_blocks();
                     let read = read_chunk.section.dump_blocks();
@@ -1004,12 +980,12 @@ mod tests {
         // TEST WRITE IN PLACE
 
         // Idk what blocks these are, they just have to be different
-        let mut chunk = chunks.first().unwrap().1.write().await;
+        let mut chunk = chunks.first().unwrap().1.write();
         chunk.section.set_relative_block(0, 0, 0, 1000);
         // Mark dirty so we actually write it
         chunk.dirty = true;
         drop(chunk);
-        let mut chunk = chunks.last().unwrap().1.write().await;
+        let mut chunk = chunks.last().unwrap().1.write();
         chunk.section.set_relative_block(0, 0, 0, 1000);
         // Mark dirty so we actually write it
         chunk.dirty = true;
@@ -1017,17 +993,16 @@ mod tests {
 
         chunk_saver
             .save_chunks(&level_folder, chunks.clone())
-            .await
             .expect("Failed to write chunk");
 
         // Create a new manager to ensure nothing is cached
         let chunk_saver = ChunkFileManager::<AnvilChunkFile<ChunkData>>::default();
-        let read_chunks = get_chunks(&chunk_saver, &level_folder, &chunks).await;
+        let read_chunks = get_chunks(&chunk_saver, &level_folder, &chunks);
 
         for (_, chunk) in &chunks {
-            let chunk = chunk.read().await;
+            let chunk = chunk.read();
             for read_chunk in read_chunks.iter() {
-                let read_chunk = read_chunk.read().await;
+                let read_chunk = read_chunk.read();
                 if read_chunk.position == chunk.position {
                     let original = chunk.section.dump_blocks();
                     let read = read_chunk.section.dump_blocks();
@@ -1063,7 +1038,7 @@ mod tests {
         // TEST SWAP SHIFT
 
         // Make a big chunk
-        let mut chunk = chunks.first().unwrap().1.write().await;
+        let mut chunk = chunks.first().unwrap().1.write();
         for x in 0..16 {
             for z in 0..16 {
                 for y in 0..4 {
@@ -1075,7 +1050,7 @@ mod tests {
         // Mark dirty so we actually write it
         chunk.dirty = true;
         drop(chunk);
-        let mut chunk = chunks[2].1.write().await;
+        let mut chunk = chunks[2].1.write();
         for x in 0..16 {
             for z in 0..16 {
                 for y in 0..4 {
@@ -1090,17 +1065,16 @@ mod tests {
 
         chunk_saver
             .save_chunks(&level_folder, chunks.clone())
-            .await
             .expect("Failed to write chunk");
 
         // Create a new manager to ensure nothing is cached
         let chunk_saver = ChunkFileManager::<AnvilChunkFile<ChunkData>>::default();
-        let read_chunks = get_chunks(&chunk_saver, &level_folder, &chunks).await;
+        let read_chunks = get_chunks(&chunk_saver, &level_folder, &chunks);
 
         for (_, chunk) in &chunks {
-            let chunk = chunk.read().await;
+            let chunk = chunk.read();
             for read_chunk in read_chunks.iter() {
-                let read_chunk = read_chunk.read().await;
+                let read_chunk = read_chunk.read();
                 if read_chunk.position == chunk.position {
                     let original = chunk.section.dump_blocks();
                     let read = read_chunk.section.dump_blocks();
@@ -1136,7 +1110,7 @@ mod tests {
         // TEST DEFAULT TO WRITE ALL
 
         // Make an even bigger chunk
-        let mut chunk = chunks.last().unwrap().1.write().await;
+        let mut chunk = chunks.last().unwrap().1.write();
         for x in 0..16 {
             for z in 0..16 {
                 for y in 0..16 {
@@ -1151,17 +1125,16 @@ mod tests {
 
         chunk_saver
             .save_chunks(&level_folder, chunks.clone())
-            .await
             .expect("Failed to write chunk");
 
         // Create a new manager to ensure nothing is cached
         let chunk_saver = ChunkFileManager::<AnvilChunkFile<ChunkData>>::default();
-        let read_chunks = get_chunks(&chunk_saver, &level_folder, &chunks).await;
+        let read_chunks = get_chunks(&chunk_saver, &level_folder, &chunks);
 
         for (_, chunk) in &chunks {
-            let chunk = chunk.read().await;
+            let chunk = chunk.read();
             for read_chunk in read_chunks.iter() {
-                let read_chunk = read_chunk.read().await;
+                let read_chunk = read_chunk.read();
                 if read_chunk.position == chunk.position {
                     let original = chunk.section.dump_blocks();
                     let read = read_chunk.section.dump_blocks();
@@ -1194,8 +1167,8 @@ mod tests {
         }
     }
 
-    #[tokio::test(flavor = "multi_thread")]
-    async fn test_write_bulk() {
+    #[test]
+    fn test_write_bulk() {
         let mut config = AdvancedConfiguration::default();
         config.chunk.write_in_place = false;
         override_config_for_testing(config);
@@ -1234,23 +1207,22 @@ mod tests {
         for _ in 0..5 {
             // Mark the chunks as dirty so we save them again
             for (_, chunk) in &chunks {
-                let mut chunk = chunk.write().await;
+                let mut chunk = chunk.write();
                 chunk.dirty = true;
             }
 
             chunk_saver
                 .save_chunks(&level_folder, chunks.clone())
-                .await
                 .expect("Failed to write chunk");
 
             // Create a new manager to ensure nothing is cached
             let chunk_saver = ChunkFileManager::<AnvilChunkFile<ChunkData>>::default();
-            let read_chunks = get_chunks(&chunk_saver, &level_folder, &chunks).await;
+            let read_chunks = get_chunks(&chunk_saver, &level_folder, &chunks);
 
             for (_, chunk) in &chunks {
-                let chunk = chunk.read().await;
+                let chunk = chunk.read();
                 for read_chunk in read_chunks.iter() {
-                    let read_chunk = read_chunk.read().await;
+                    let read_chunk = read_chunk.read();
                     if read_chunk.position == chunk.position {
                         let original = chunk.section.dump_blocks();
                         let read = read_chunk.section.dump_blocks();

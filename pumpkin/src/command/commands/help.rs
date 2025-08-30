@@ -1,5 +1,3 @@
-use async_trait::async_trait;
-use futures::StreamExt;
 use pumpkin_util::text::TextComponent;
 use pumpkin_util::text::click::ClickEvent;
 use pumpkin_util::text::color::{Color, NamedColor};
@@ -28,9 +26,8 @@ fn page_number_consumer() -> BoundedNumArgumentConsumer<i32> {
 
 struct Executor;
 
-#[async_trait]
 impl CommandExecutor for Executor {
-    async fn execute<'a>(
+    fn execute<'a>(
         &self,
         sender: &mut CommandSender,
         _server: &Server,
@@ -93,7 +90,7 @@ impl CommandExecutor for Executor {
         message =
             message.add_child(TextComponent::text("-".repeat(52)).color_named(NamedColor::Yellow));
 
-        sender.send_message(message).await;
+        sender.send_message(message);
 
         Ok(())
     }
@@ -101,10 +98,9 @@ impl CommandExecutor for Executor {
 
 struct BaseHelpExecutor;
 
-#[async_trait]
 impl CommandExecutor for BaseHelpExecutor {
     #[expect(clippy::too_many_lines)]
-    async fn execute<'a>(
+    fn execute<'a>(
         &self,
         sender: &mut CommandSender,
         server: &Server,
@@ -114,17 +110,15 @@ impl CommandExecutor for BaseHelpExecutor {
             Err(_) => 1,
             Ok(Ok(number)) => number,
             Ok(Err(_)) => {
-                sender
-                    .send_message(
-                        TextComponent::text("Invalid page number.")
-                            .color(Color::Named(NamedColor::Red)),
-                    )
-                    .await;
+                sender.send_message(
+                    TextComponent::text("Invalid page number.")
+                        .color(Color::Named(NamedColor::Red)),
+                );
                 return Ok(());
             }
         };
 
-        let dispatcher = server.command_dispatcher.read().await;
+        let dispatcher = server.command_dispatcher.read();
         let commands: Vec<&CommandTree> = dispatcher
             .commands
             .values()
@@ -134,15 +128,16 @@ impl CommandExecutor for BaseHelpExecutor {
             })
             .collect();
 
-        let mut commands: Vec<&CommandTree> = futures::stream::iter(commands.iter())
-            .filter(|tree| async {
+        let mut commands: Vec<&CommandTree> = commands
+            .iter()
+            .filter(|tree| {
                 if let Some(perm) = dispatcher.permissions.get(&tree.names[0]) {
-                    return sender.has_permission(perm.as_str()).await;
+                    return sender.has_permission(perm.as_str());
                 }
                 false
             })
-            .collect()
-            .await;
+            .cloned()
+            .collect();
 
         commands.sort_by(|a, b| a.names[0].cmp(&b.names[0]));
 
@@ -226,7 +221,7 @@ impl CommandExecutor for BaseHelpExecutor {
                     .color_named(NamedColor::Yellow),
             );
 
-        sender.send_message(message).await;
+        sender.send_message(message);
 
         Ok(())
     }

@@ -40,7 +40,7 @@ pub trait Plugin: Send + Sync + 'static {
     ///
     /// # Returns
     /// - `Ok(())` on success, or `Err(String)` on failure.
-    async fn on_load(&mut self, _server: Arc<Context>) -> Result<(), String> {
+    fn on_load(&mut self, _server: Arc<Context>) -> Result<(), String> {
         Ok(())
     }
 
@@ -53,7 +53,7 @@ pub trait Plugin: Send + Sync + 'static {
     ///
     /// # Returns
     /// - `Ok(())` on success, or `Err(String)` on failure.
-    async fn on_unload(&mut self, _server: Arc<Context>) -> Result<(), String> {
+    fn on_unload(&mut self, _server: Arc<Context>) -> Result<(), String> {
         Ok(())
     }
 }

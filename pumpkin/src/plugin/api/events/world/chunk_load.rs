@@ -2,7 +2,7 @@ use crate::world::World;
 use pumpkin_macros::{Event, cancellable};
 use pumpkin_world::chunk::ChunkData;
 use std::sync::Arc;
-use tokio::sync::RwLock;
+use parking_lot::RwLock;
 
 /// An event that occurs when a chunk is loaded in a world.
 ///

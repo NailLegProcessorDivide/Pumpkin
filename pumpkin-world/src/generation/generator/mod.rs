@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use async_trait::async_trait;
+
 use pumpkin_data::BlockState;
 use pumpkin_data::noise_router::{
     END_BASE_NOISE_ROUTER, NETHER_BASE_NOISE_ROUTER, OVERWORLD_BASE_NOISE_ROUTER,
@@ -28,7 +28,7 @@ pub trait GeneratorInit {
     fn new(seed: Seed, dimension: Dimension) -> Self;
 }
 
-#[async_trait]
+
 pub trait WorldGenerator: Sync + Send {
     fn generate_chunk(
         &self,

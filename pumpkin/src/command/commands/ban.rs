@@ -13,7 +13,7 @@ use crate::{
     net::DisconnectReason,
 };
 use CommandError::InvalidConsumption;
-use async_trait::async_trait;
+
 use pumpkin_util::text::TextComponent;
 
 const NAMES: [&str; 1] = ["ban"];
@@ -24,9 +24,9 @@ const ARG_REASON: &str = "reason";
 
 struct NoReasonExecutor;
 
-#[async_trait]
+
 impl CommandExecutor for NoReasonExecutor {
-    async fn execute<'a>(
+    fn execute<'a>(
         &self,
         sender: &mut CommandSender,
         _server: &crate::server::Server,
@@ -36,16 +36,16 @@ impl CommandExecutor for NoReasonExecutor {
             return Err(InvalidConsumption(Some(ARG_TARGET.into())));
         };
 
-        ban_player(sender, &targets[0], None).await;
+        ban_player(sender, &targets[0], None);
         Ok(())
     }
 }
 
 struct ReasonExecutor;
 
-#[async_trait]
+
 impl CommandExecutor for ReasonExecutor {
-    async fn execute<'a>(
+    fn execute<'a>(
         &self,
         sender: &mut CommandSender,
         _server: &crate::server::Server,
@@ -59,21 +59,19 @@ impl CommandExecutor for ReasonExecutor {
             return Err(InvalidConsumption(Some(ARG_REASON.into())));
         };
 
-        ban_player(sender, &targets[0], Some(reason.clone())).await;
+        ban_player(sender, &targets[0], Some(reason.clone()));
         Ok(())
     }
 }
 
-async fn ban_player(sender: &CommandSender, player: &Player, reason: Option<String>) {
-    let mut banned_players = BANNED_PLAYER_LIST.write().await;
+fn ban_player(sender: &CommandSender, player: &Player, reason: Option<String>) {
+    let mut banned_players = BANNED_PLAYER_LIST.write();
 
     let reason = reason.unwrap_or_else(|| "Banned by an operator.".to_string());
     let profile = &player.gameprofile;
 
     if banned_players.get_entry(&player.gameprofile).is_some() {
-        sender
-            .send_message(TextComponent::translate("commands.ban.failed", []))
-            .await;
+        sender.send_message(TextComponent::translate("commands.ban.failed", []));
         return;
     }
 
@@ -88,19 +86,15 @@ async fn ban_player(sender: &CommandSender, player: &Player, reason: Option<Stri
     drop(banned_players);
 
     // Send messages
-    sender
-        .send_message(TextComponent::translate(
-            "commands.ban.success",
-            [player.get_display_name().await, TextComponent::text(reason)],
-        ))
-        .await;
+    sender.send_message(TextComponent::translate(
+        "commands.ban.success",
+        [player.get_display_name(), TextComponent::text(reason)],
+    ));
 
-    player
-        .kick(
-            DisconnectReason::Kicked,
-            TextComponent::translate("multiplayer.disconnect.banned", []),
-        )
-        .await;
+    player.kick(
+        DisconnectReason::Kicked,
+        TextComponent::translate("multiplayer.disconnect.banned", []),
+    );
 }
 
 pub fn init_command_tree() -> CommandTree {

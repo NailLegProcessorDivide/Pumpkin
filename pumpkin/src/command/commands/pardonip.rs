@@ -10,7 +10,7 @@ use crate::{
     data::{SaveJSONConfiguration, banned_ip_data::BANNED_IP_LIST},
 };
 use CommandError::InvalidConsumption;
-use async_trait::async_trait;
+
 use pumpkin_util::text::TextComponent;
 
 const NAMES: [&str; 1] = ["pardon-ip"];
@@ -20,9 +20,9 @@ const ARG_TARGET: &str = "ip";
 
 struct Executor;
 
-#[async_trait]
+
 impl CommandExecutor for Executor {
-    async fn execute<'a>(
+    fn execute<'a>(
         &self,
         sender: &mut CommandSender,
         _server: &crate::server::Server,
@@ -33,31 +33,25 @@ impl CommandExecutor for Executor {
         };
 
         let Ok(ip) = IpAddr::from_str(target) else {
-            sender
-                .send_message(TextComponent::translate("commands.pardonip.invalid", []))
-                .await;
+            sender.send_message(TextComponent::translate("commands.pardonip.invalid", []));
             return Ok(());
         };
 
-        let mut lock = BANNED_IP_LIST.write().await;
+        let mut lock = BANNED_IP_LIST.write();
 
         if let Some(idx) = lock.banned_ips.iter().position(|entry| entry.ip == ip) {
             lock.banned_ips.remove(idx);
         } else {
-            sender
-                .send_message(TextComponent::translate("commands.pardonip.failed", []))
-                .await;
+            sender.send_message(TextComponent::translate("commands.pardonip.failed", []));
             return Ok(());
         }
 
         lock.save();
 
-        sender
-            .send_message(TextComponent::translate(
-                "commands.pardonip.success",
-                [TextComponent::text(ip.to_string())],
-            ))
-            .await;
+        sender.send_message(TextComponent::translate(
+            "commands.pardonip.success",
+            [TextComponent::text(ip.to_string())],
+        ));
         Ok(())
     }
 }

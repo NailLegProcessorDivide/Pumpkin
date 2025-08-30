@@ -1,7 +1,7 @@
 use crate::entity::player::Player;
 use crate::item::{ItemBehaviour, ItemMetadata};
 use crate::server::Server;
-use async_trait::async_trait;
+
 use pumpkin_data::BlockDirection;
 use pumpkin_data::block_properties::{BlockProperties, CampfireLikeProperties};
 use pumpkin_data::sound::{Sound, SoundCategory};
@@ -20,9 +20,9 @@ impl ItemMetadata for ShovelItem {
     }
 }
 
-#[async_trait]
+
 impl ItemBehaviour for ShovelItem {
-    async fn use_on_block(
+    fn use_on_block(
         &self,
         _item: &mut ItemStack,
         player: &Player,
@@ -40,7 +40,7 @@ impl ItemBehaviour for ShovelItem {
             || block == &Block::PODZOL
             || block == &Block::MYCELIUM)
             && face != BlockDirection::Down
-            && world.get_block_state(&location.up()).await.is_air()
+            && world.get_block_state(&location.up()).is_air()
         {
             world
                 .set_block_state(
@@ -48,17 +48,17 @@ impl ItemBehaviour for ShovelItem {
                     Block::DIRT_PATH.default_state.id,
                     BlockFlags::NOTIFY_ALL,
                 )
-                .await;
+                ;
         }
         if block == &Block::CAMPFIRE || block == &Block::SOUL_CAMPFIRE {
             let mut campfire_props = CampfireLikeProperties::from_state_id(
-                world.get_block_state(&location).await.id,
+                world.get_block_state(&location).id,
                 block,
             );
             if campfire_props.lit {
                 world
                     .sync_world_event(WorldEvent::FireExtinguished, location, 0)
-                    .await;
+                    ;
 
                 campfire_props.lit = false;
                 world
@@ -67,7 +67,7 @@ impl ItemBehaviour for ShovelItem {
                         campfire_props.to_state_id(block),
                         BlockFlags::NOTIFY_ALL,
                     )
-                    .await;
+                    ;
                 let seed = rng().random::<f64>();
                 player
                     .play_sound(
@@ -78,7 +78,7 @@ impl ItemBehaviour for ShovelItem {
                         2.0,
                         seed,
                     )
-                    .await;
+                    ;
             }
         }
     }

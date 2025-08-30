@@ -1,4 +1,3 @@
-use async_trait::async_trait;
 use pumpkin_data::{
     Block, BlockDirection, HorizontalFacingExt,
     block_properties::{BlockFace, BlockProperties, GrindstoneLikeProperties},
@@ -16,9 +15,8 @@ use super::abstruct_wall_mounting::WallMountedBlock;
 #[pumpkin_block("minecraft:grindstone")]
 pub struct GrindstoneBlock;
 
-#[async_trait]
 impl BlockBehaviour for GrindstoneBlock {
-    async fn on_place(&self, args: OnPlaceArgs<'_>) -> BlockStateId {
+    fn on_place(&self, args: OnPlaceArgs<'_>) -> BlockStateId {
         let mut props =
             GrindstoneLikeProperties::from_state_id(args.block.default_state.id, args.block);
         (props.face, props.facing) =
@@ -27,22 +25,20 @@ impl BlockBehaviour for GrindstoneBlock {
         props.to_state_id(args.block)
     }
 
-    async fn can_place_at(&self, args: CanPlaceAtArgs<'_>) -> bool {
+    fn can_place_at(&self, args: CanPlaceAtArgs<'_>) -> bool {
         WallMountedBlock::can_place_at(self, args.block_accessor, args.position, args.direction)
-            .await
     }
 
-    async fn get_state_for_neighbor_update(
+    fn get_state_for_neighbor_update(
         &self,
         args: GetStateForNeighborUpdateArgs<'_>,
     ) -> BlockStateId {
-        WallMountedBlock::get_state_for_neighbor_update(self, args).await
+        WallMountedBlock::get_state_for_neighbor_update(self, args)
     }
 }
 
-#[async_trait]
 impl WallMountedBlock for GrindstoneBlock {
-    async fn can_place_at(
+    fn can_place_at(
         &self,
         _world: &dyn BlockAccessor,
         _pos: &BlockPos,

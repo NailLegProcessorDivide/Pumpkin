@@ -32,19 +32,19 @@ impl LevelTime {
         self.rain_time += 1;
     }
 
-    pub async fn send_time(&self, world: &World) {
-        let current_players = world.players.read().await;
+    pub fn send_time(&self, world: &World) {
+        let current_players = world.players.read();
         for player in current_players.values() {
             match player.client.as_ref() {
                 ClientPlatform::Java(java_client) => {
-                    java_client
-                        .enqueue_packet(&CUpdateTime::new(self.world_age, self.time_of_day, true))
-                        .await;
+                    java_client.enqueue_packet(&CUpdateTime::new(
+                        self.world_age,
+                        self.time_of_day,
+                        true,
+                    ));
                 }
                 ClientPlatform::Bedrock(bedrock_client) => {
-                    bedrock_client
-                        .send_game_packet(&CSetTime::new(self.time_of_day as _))
-                        .await;
+                    bedrock_client.send_game_packet(&CSetTime::new(self.time_of_day as _));
                 }
             }
         }

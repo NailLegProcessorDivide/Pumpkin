@@ -1,6 +1,6 @@
 use super::{Entity, EntityBase, NBTStorage, living::LivingEntity};
 use crate::server::Server;
-use async_trait::async_trait;
+
 use core::f32;
 use pumpkin_data::Block;
 use pumpkin_protocol::{
@@ -37,17 +37,16 @@ impl TNTEntity {
 
 impl NBTStorage for TNTEntity {}
 
-#[async_trait]
 impl EntityBase for TNTEntity {
-    async fn tick(&self, caller: Arc<dyn EntityBase>, server: &Server) {
+    fn tick(&self, caller: Arc<dyn EntityBase>, server: &Server) {
         let entity = &self.entity;
         let original_velo = entity.velocity.load();
 
         let mut velo = original_velo;
         velo.y -= self.get_gravity();
 
-        entity.move_entity(caller.clone(), velo).await;
-        entity.tick_block_collisions(&caller, server).await;
+        entity.move_entity(caller.clone(), velo);
+        entity.tick_block_collisions(&caller, server);
         entity.velocity.store(velo.multiply(0.98, 0.98, 0.98));
         if entity.on_ground.load(Ordering::Relaxed) {
             entity.velocity.store(velo.multiply(0.7, -0.5, 0.7));
@@ -55,45 +54,41 @@ impl EntityBase for TNTEntity {
         let velocity_dirty = entity.velocity_dirty.swap(false, Ordering::SeqCst);
 
         if velocity_dirty {
-            entity.send_pos_rot().await;
+            entity.send_pos_rot();
 
-            entity.send_velocity().await;
+            entity.send_velocity();
         }
 
         let fuse = self.fuse.fetch_sub(1, Relaxed);
         if fuse == 0 {
-            self.entity.remove().await;
+            self.entity.remove();
             self.entity
                 .world
-                .explode(self.entity.pos.load(), self.power)
-                .await;
+                .explode(self.entity.pos.load(), self.power);
         } else {
-            entity.update_fluid_state(&caller).await;
+            entity.update_fluid_state(&caller);
         }
     }
 
-    async fn init_data_tracker(&self) {
+    fn init_data_tracker(&self) {
         // TODO: Yes, this is the wrong function, but we need to send this after spawning the entity.
         let pos: f64 = rand::random::<f64>() * TAU;
 
         self.entity
-            .set_velocity(Vector3::new(-pos.sin() * 0.02, 0.2, -pos.cos() * 0.02))
-            .await;
+            .set_velocity(Vector3::new(-pos.sin() * 0.02, 0.2, -pos.cos() * 0.02));
         // We can merge multiple `Metadata`s into one meta packet.
-        self.entity
-            .send_meta_data(&[
-                Metadata::new(
-                    8,
-                    MetaDataType::Integer,
-                    VarInt(self.fuse.load(Relaxed) as i32),
-                ),
-                Metadata::new(
-                    9,
-                    MetaDataType::BlockState,
-                    VarInt(i32::from(Block::TNT.default_state.id)),
-                ),
-            ])
-            .await;
+        self.entity.send_meta_data(&[
+            Metadata::new(
+                8,
+                MetaDataType::Integer,
+                VarInt(self.fuse.load(Relaxed) as i32),
+            ),
+            Metadata::new(
+                9,
+                MetaDataType::BlockState,
+                VarInt(i32::from(Block::TNT.default_state.id)),
+            ),
+        ]);
     }
 
     fn get_entity(&self) -> &Entity {

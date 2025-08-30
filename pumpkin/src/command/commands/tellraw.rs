@@ -7,7 +7,6 @@ use crate::command::{
     tree::CommandTree,
     tree::builder::argument,
 };
-use async_trait::async_trait;
 
 const NAMES: [&str; 1] = ["tellraw"];
 
@@ -19,9 +18,9 @@ const ARG_MESSAGE: &str = "message";
 
 struct TellRawExecutor;
 
-#[async_trait]
+
 impl CommandExecutor for TellRawExecutor {
-    async fn execute<'a>(
+    fn execute<'a>(
         &self,
         _sender: &mut CommandSender,
         _server: &crate::server::Server,
@@ -33,7 +32,7 @@ impl CommandExecutor for TellRawExecutor {
 
         let text = TextComponentArgConsumer::find_arg(args, ARG_MESSAGE)?;
         for target in targets {
-            target.send_system_message(&text).await;
+            target.send_system_message(&text);
         }
         Ok(())
     }

@@ -7,7 +7,7 @@ use std::sync::Arc;
 use crate::entity::EntityBase;
 use crate::entity::player::Player;
 use crate::server::Server;
-use async_trait::async_trait;
+
 use pumpkin_data::Block;
 use pumpkin_data::BlockDirection;
 use pumpkin_data::item::Item;
@@ -19,11 +19,10 @@ pub trait ItemMetadata {
     fn ids() -> Box<[u16]>;
 }
 
-#[async_trait]
 pub trait ItemBehaviour: Send + Sync {
-    async fn normal_use(&self, _block: &Item, _player: &Player) {}
+    fn normal_use(&self, _block: &Item, _player: &Player) {}
 
-    async fn use_on_block(
+    fn use_on_block(
         &self,
         _item: &mut ItemStack,
         _player: &Player,
@@ -34,12 +33,7 @@ pub trait ItemBehaviour: Send + Sync {
     ) {
     }
 
-    async fn use_on_entity(
-        &self,
-        _item: &mut ItemStack,
-        _player: &Player,
-        _entity: Arc<dyn EntityBase>,
-    ) {
+    fn use_on_entity(&self, _item: &mut ItemStack, _player: &Player, _entity: Arc<dyn EntityBase>) {
     }
 
     fn can_mine(&self, _player: &Player) -> bool {

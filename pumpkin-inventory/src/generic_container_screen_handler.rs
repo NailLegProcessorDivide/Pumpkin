@@ -1,6 +1,5 @@
 use std::{any::Any, sync::Arc};
 
-use async_trait::async_trait;
 use pumpkin_data::screen::WindowType;
 use pumpkin_world::{inventory::Inventory, item::ItemStack};
 
@@ -114,10 +113,9 @@ impl GenericContainerScreenHandler {
     }
 }
 
-#[async_trait]
 impl ScreenHandler for GenericContainerScreenHandler {
-    async fn on_closed(&mut self, player: &dyn InventoryPlayer) {
-        self.default_on_closed(player).await;
+    fn on_closed(&mut self, player: &dyn InventoryPlayer) {
+        self.default_on_closed(player);
         self.inventory.on_close();
     }
 
@@ -133,42 +131,31 @@ impl ScreenHandler for GenericContainerScreenHandler {
         &mut self.behaviour
     }
 
-    async fn quick_move(&mut self, _player: &dyn InventoryPlayer, slot_index: i32) -> ItemStack {
+    fn quick_move(&mut self, _player: &dyn InventoryPlayer, slot_index: i32) -> ItemStack {
         let mut stack_left = ItemStack::EMPTY.clone();
         let slot = self.get_behaviour().slots[slot_index as usize].clone();
 
-        if slot.has_stack().await {
-            let slot_stack = slot.get_stack().await;
-            stack_left = slot_stack.lock().await.clone();
+        if slot.has_stack() {
+            let slot_stack = slot.get_stack();
+            stack_left = slot_stack.lock().clone();
 
             if slot_index < (self.rows * 9) as i32 {
-                if !self
-                    .insert_item(
-                        &mut *slot_stack.lock().await,
-                        (self.rows * 9).into(),
-                        self.get_behaviour().slots.len() as i32,
-                        true,
-                    )
-                    .await
-                {
+                if !self.insert_item(
+                    &mut *slot_stack.lock(),
+                    (self.rows * 9).into(),
+                    self.get_behaviour().slots.len() as i32,
+                    true,
+                ) {
                     return ItemStack::EMPTY.clone();
                 }
-            } else if !self
-                .insert_item(
-                    &mut *slot_stack.lock().await,
-                    0,
-                    (self.rows * 9).into(),
-                    false,
-                )
-                .await
-            {
+            } else if !self.insert_item(&mut *slot_stack.lock(), 0, (self.rows * 9).into(), false) {
                 return ItemStack::EMPTY.clone();
             }
 
             if stack_left.is_empty() {
-                slot.set_stack(ItemStack::EMPTY.clone()).await;
+                slot.set_stack(ItemStack::EMPTY.clone());
             } else {
-                slot.mark_dirty().await;
+                slot.mark_dirty();
             }
         }
 

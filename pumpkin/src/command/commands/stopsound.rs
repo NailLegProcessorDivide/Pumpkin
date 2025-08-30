@@ -7,7 +7,7 @@ use crate::command::{
     dispatcher::CommandError,
     tree::{CommandTree, builder::argument},
 };
-use async_trait::async_trait;
+
 use pumpkin_util::resource_location::ResourceLocation;
 use pumpkin_util::text::TextComponent;
 
@@ -20,9 +20,9 @@ const ARG_SOUND: &str = "sound";
 
 pub struct Executor;
 
-#[async_trait]
+
 impl CommandExecutor for Executor {
-    async fn execute<'a>(
+    fn execute<'a>(
         &self,
         sender: &mut CommandSender,
         _server: &crate::server::Server,
@@ -34,16 +34,14 @@ impl CommandExecutor for Executor {
         let sound = SoundArgumentConsumer::find_arg(args, ARG_SOUND);
 
         for target in targets {
-            target
-                .stop_sound(
-                    sound
-                        .as_ref()
-                        .cloned()
-                        .map(|s| ResourceLocation::vanilla(s.to_name()))
-                        .ok(),
-                    category.as_ref().map(|s| **s).ok(),
-                )
-                .await;
+            target.stop_sound(
+                sound
+                    .as_ref()
+                    .cloned()
+                    .map(|s| ResourceLocation::vanilla(s.to_name()))
+                    .ok(),
+                category.as_ref().map(|s| **s).ok(),
+            );
         }
         let text = match (category, sound) {
             (Ok(c), Ok(s)) => TextComponent::translate(
@@ -65,7 +63,7 @@ impl CommandExecutor for Executor {
                 TextComponent::translate("commands.stopsound.success.sourceless.any", [])
             }
         };
-        sender.send_message(text).await;
+        sender.send_message(text);
 
         Ok(())
     }

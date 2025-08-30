@@ -1,6 +1,5 @@
 use std::sync::atomic::Ordering;
 
-use async_trait::async_trait;
 use pumpkin_data::Block;
 use pumpkin_util::{GameMode, math::position::BlockPos};
 use pumpkin_world::{block::entities::command_block::CommandBlockEntity, tick::TickPriority};
@@ -17,7 +16,7 @@ use super::redstone::block_receives_redstone_power;
 pub struct CommandBlock;
 
 impl CommandBlock {
-    pub async fn update(
+    pub fn update(
         world: &World,
         block: &Block,
         command_block: &CommandBlockEntity,
@@ -29,9 +28,7 @@ impl CommandBlock {
         }
         command_block.powered.store(powered, Ordering::Relaxed);
         if powered {
-            world
-                .schedule_block_tick(block, *pos, 1, TickPriority::Normal)
-                .await;
+            world.schedule_block_tick(block, *pos, 1, TickPriority::Normal);
         }
     }
 }
@@ -50,10 +47,9 @@ impl BlockMetadata for CommandBlock {
     }
 }
 
-#[async_trait]
 impl BlockBehaviour for CommandBlock {
-    async fn on_neighbor_update(&self, args: OnNeighborUpdateArgs<'_>) {
-        if let Some(block_entity) = args.world.get_block_entity(args.position).await {
+    fn on_neighbor_update(&self, args: OnNeighborUpdateArgs<'_>) {
+        if let Some(block_entity) = args.world.get_block_entity(args.position) {
             if block_entity.resource_location() != CommandBlockEntity::ID {
                 return;
             }
@@ -67,14 +63,13 @@ impl BlockBehaviour for CommandBlock {
                 args.block,
                 command_entity,
                 args.position,
-                block_receives_redstone_power(args.world, args.position).await,
-            )
-            .await;
+                block_receives_redstone_power(args.world, args.position),
+            );
         }
     }
 
-    async fn on_scheduled_tick(&self, args: OnScheduledTickArgs<'_>) {
-        if let Some(block_entity) = args.world.get_block_entity(args.position).await
+    fn on_scheduled_tick(&self, args: OnScheduledTickArgs<'_>) {
+        if let Some(block_entity) = args.world.get_block_entity(args.position)
             && block_entity.resource_location() != CommandBlockEntity::ID
         {
             return;
@@ -82,7 +77,7 @@ impl BlockBehaviour for CommandBlock {
         // TODO
     }
 
-    async fn can_place_at(&self, args: CanPlaceAtArgs<'_>) -> bool {
+    fn can_place_at(&self, args: CanPlaceAtArgs<'_>) -> bool {
         if let Some(player) = args.player
             && player.gamemode.load() == GameMode::Creative
         {

@@ -3,13 +3,13 @@ use crate::entity::ai::target_predicate::TargetPredicate;
 use crate::entity::mob::Mob;
 use crate::entity::predicate::EntityPredicate;
 use crate::entity::{EntityBase, player::Player};
-use async_trait::async_trait;
+
 use pumpkin_data::entity::EntityType;
 use rand::Rng;
 use std::sync::atomic::AtomicI32;
 use std::sync::atomic::Ordering::Relaxed;
 use std::sync::{Arc, Weak};
-use tokio::sync::Mutex;
+use parking_lot::Mutex;
 
 #[allow(dead_code)]
 pub struct LookAtEntityGoal {
@@ -67,7 +67,7 @@ impl LookAtEntityGoal {
                 async move {
                     if let Some(mob_arc) = mob_weak.upgrade() {
                         let predicate = EntityPredicate::Rides(mob_arc.get_entity());
-                        predicate.test(&living_entity.entity).await
+                        predicate.test(&living_entity.entity)
                     } else {
                         // MobEntity is destroyed
                         false
@@ -79,17 +79,17 @@ impl LookAtEntityGoal {
     }
 }
 
-#[async_trait]
+
 impl Goal for LookAtEntityGoal {
-    async fn can_start(&self, mob: &dyn Mob) -> bool {
+    fn can_start(&self, mob: &dyn Mob) -> bool {
         if mob.get_random().random::<f64>() >= self.chance {
             return false;
         }
 
         let mob_entity = mob.get_mob_entity();
-        let mut target = self.target.lock().await;
+        let mut target = self.target.lock();
 
-        let mob_target = mob_entity.target.lock().await;
+        let mob_target = mob_entity.target.lock();
         if mob_target.is_some() {
             (*target).clone_from(&mob_target);
         }
@@ -99,24 +99,21 @@ impl Goal for LookAtEntityGoal {
         if self.target_type == &EntityType::PLAYER {
             *target = world
                 .get_closest_player(mob_entity.living_entity.entity.pos.load(), self.range)
-                .await
                 .map(|p: Arc<Player>| p as Arc<dyn EntityBase>);
         } else {
-            *target = world
-                .get_closest_entity(
-                    mob_entity.living_entity.entity.pos.load(),
-                    self.range,
-                    Some(&[self.target_type]),
-                )
-                .await;
+            *target = world.get_closest_entity(
+                mob_entity.living_entity.entity.pos.load(),
+                self.range,
+                Some(&[self.target_type]),
+            );
         }
 
         target.is_some()
     }
 
-    async fn should_continue(&self, mob: &dyn Mob) -> bool {
+    fn should_continue(&self, mob: &dyn Mob) -> bool {
         let mob = mob.get_mob_entity();
-        if let Some(target) = self.target.lock().await.as_ref() {
+        if let Some(target) = self.target.lock().as_ref() {
             if !target.get_entity().is_alive() {
                 return false;
             }
@@ -130,22 +127,22 @@ impl Goal for LookAtEntityGoal {
         false
     }
 
-    async fn start(&self, mob: &dyn Mob) {
+    fn start(&self, mob: &dyn Mob) {
         let tick_count = self.get_tick_count(40 + mob.get_random().random_range(0..40));
         self.look_time.store(tick_count, Relaxed);
     }
 
-    async fn stop(&self, _mob: &dyn Mob) {
-        *self.target.lock().await = None;
+    fn stop(&self, _mob: &dyn Mob) {
+        *self.target.lock() = None;
     }
 
-    async fn tick(&self, mob: &dyn Mob) {
+    fn tick(&self, mob: &dyn Mob) {
         let mob = mob.get_mob_entity();
-        if let Some(target) = self.target.lock().await.as_ref()
+        if let Some(target) = self.target.lock().as_ref()
             && target.get_entity().is_alive()
         {
             let target_pos = target.get_entity().pos.load();
-            mob.living_entity.entity.look_at(target_pos).await;
+            mob.living_entity.entity.look_at(target_pos);
             self.look_time.fetch_sub(1, Relaxed);
         }
     }

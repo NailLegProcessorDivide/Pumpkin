@@ -11,10 +11,11 @@ use crate::server::tick_rate_manager::ServerTickRateManager;
 use crate::world::custom_bossbar::CustomBossbars;
 use crate::{command::dispatcher::CommandDispatcher, entity::player::Player, world::World};
 use connection_cache::{CachedBranding, CachedStatus};
-use key_store::KeyStore;
 use pumpkin_config::{BASIC_CONFIG, advanced_config};
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 
 use crate::command::CommandSender;
+use parking_lot::{Mutex, RwLock};
 use pumpkin_macros::send_cancellable;
 use pumpkin_protocol::java::client::login::CEncryptionRequest;
 use pumpkin_protocol::java::client::play::CChangeDifficulty;
@@ -38,12 +39,10 @@ use std::net::IpAddr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicI64, AtomicU32};
 use std::{future::Future, sync::atomic::Ordering, time::Duration};
-use tokio::sync::{Mutex, RwLock};
 use tokio::task::JoinHandle;
 use tokio_util::task::TaskTracker;
 
 mod connection_cache;
-mod key_store;
 pub mod seasonal_events;
 pub mod tick_rate_manager;
 pub mod ticker;
@@ -54,8 +53,6 @@ use super::command::args::entities::{
 
 /// Represents a Minecraft server instance.
 pub struct Server {
-    /// Handles cryptographic keys for secure communication.
-    key_store: KeyStore,
     /// Manages server status information.
     listing: Mutex<CachedStatus>,
     /// Saves server branding information.
@@ -109,9 +106,9 @@ impl Server {
     #[allow(clippy::new_without_default)]
     #[allow(clippy::too_many_lines)]
     #[must_use]
-    pub async fn new() -> Arc<Self> {
+    pub fn new() -> Arc<Self> {
         // First register the default commands. After that, plugins can put in their own.
-        let command_dispatcher = RwLock::new(default_dispatcher().await);
+        let command_dispatcher = RwLock::new(default_dispatcher());
         let world_path = BASIC_CONFIG.get_world_path();
 
         let block_registry = super::block::registry::default_registry();
@@ -165,7 +162,6 @@ impl Server {
             command_dispatcher,
             block_registry: block_registry.clone(),
             item_registry: super::item::items::default_registry(),
-            key_store: KeyStore::new(),
             listing: Mutex::new(CachedStatus::new()),
             branding: CachedBranding::new(),
             bossbars: Mutex::new(CustomBossbars::new()),
@@ -233,9 +229,9 @@ impl Server {
         self.tasks.spawn(task)
     }
 
-    pub async fn get_world_from_dimension(&self, dimension: VanillaDimensionType) -> Arc<World> {
+    pub fn get_world_from_dimension(&self, dimension: VanillaDimensionType) -> Arc<World> {
         // TODO: this is really bad
-        let world_guard = self.worlds.read().await;
+        let world_guard = self.worlds.read();
         match dimension {
             VanillaDimensionType::Overworld => world_guard.first(),
             VanillaDimensionType::OverworldCaves => todo!(),
@@ -278,21 +274,20 @@ impl Server {
         profile: GameProfile,
         config: Option<PlayerConfig>,
     ) -> Option<(Arc<Player>, Arc<World>)> {
-        let gamemode = self.defaultgamemode.lock().await.gamemode;
+        let gamemode = self.defaultgamemode.lock().gamemode;
 
         let (world, nbt) = if let Ok(Some(data)) = self.player_data_storage.load_data(&profile.id) {
             if let Some(dimension_key) = data.get_string("Dimension") {
                 if let Some(dimension) =
                     VanillaDimensionType::from_resource_location_string(dimension_key)
                 {
-                    let world = self.get_world_from_dimension(dimension).await;
+                    let world = self.get_world_from_dimension(dimension);
                     (world, Some(data))
                 } else {
                     log::warn!("Invalid dimension key in player data: {dimension_key}");
                     let default_world = self
                         .worlds
                         .read()
-                        .await
                         .first()
                         .expect("Default world should exist")
                         .clone();
@@ -303,7 +298,6 @@ impl Server {
                 let default_world = self
                     .worlds
                     .read()
-                    .await
                     .first()
                     .expect("Default world should exist")
                     .clone();
@@ -314,7 +308,6 @@ impl Server {
             let default_world = self
                 .worlds
                 .read()
-                .await
                 .first()
                 .expect("Default world should exist")
                 .clone();
@@ -327,11 +320,10 @@ impl Server {
             config.clone().unwrap_or_default(),
             world.clone(),
             gamemode,
-        )
-        .await;
+        );
 
         if let Some(mut nbt_data) = nbt {
-            player.read_nbt(&mut nbt_data).await;
+            player.read_nbt(&mut nbt_data);
         }
 
         // Wrap in Arc after data is loaded
@@ -340,15 +332,15 @@ impl Server {
         send_cancellable! {{
             PlayerLoginEvent::new(player.clone(), TextComponent::text("You have been kicked from the server"));
             'after: {
-                player.screen_handler_sync_handler.store_player(player.clone()).await;
+                player.screen_handler_sync_handler.store_player(player.clone());
                 if world
                     .add_player(player.gameprofile.id, player.clone())
-                    .await.is_ok() {
+                    .is_ok() {
                     // TODO: Config if we want increase online
                     if let Some(config) = config {
                         // TODO: Config so we can also just ignore this hehe
                         if config.server_listing {
-                            self.listing.lock().await.add_player(&player);
+                            self.listing.lock().add_player(&player);
                         }
                     }
 
@@ -359,7 +351,7 @@ impl Server {
             }
 
             'cancelled: {
-                player.kick(DisconnectReason::Kicked, event.kick_message).await;
+                player.kick(DisconnectReason::Kicked, event.kick_message);
                 None
             }
         }}
@@ -367,20 +359,20 @@ impl Server {
 
     pub async fn remove_player(&self, player: &Player) {
         // TODO: Config if we want decrease online
-        self.listing.lock().await.remove_player(player);
+        self.listing.lock().remove_player(player);
     }
 
-    pub async fn shutdown(&self) {
+    pub fn shutdown(&self) {
         self.tasks.close();
         log::debug!("Awaiting tasks for server");
-        self.tasks.wait().await;
+        self.tasks.wait();
         log::debug!("Done awaiting tasks for server");
 
         log::info!("Starting worlds");
-        for world in self.worlds.read().await.iter() {
-            world.shutdown().await;
+        for world in self.worlds.read().iter() {
+            world.shutdown();
         }
-        let level_data = self.level_info.read().await;
+        let level_data = self.level_info.read();
         // then lets save the world info
 
         if let Err(err) = self
@@ -400,10 +392,10 @@ impl Server {
     ///
     /// * `packet`: A reference to the packet to be broadcast. The packet must implement the `ClientPacket` trait.
     pub async fn broadcast_packet_all<P: ClientPacket>(&self, packet: &P) {
-        for world in self.worlds.read().await.iter() {
-            let current_players = world.players.read().await;
+        for world in self.worlds.read().iter() {
+            let current_players = world.players.read();
             for player in current_players.values() {
-                player.client.enqueue_packet(packet).await;
+                player.client.enqueue_packet(packet);
             }
         }
     }
@@ -419,10 +411,10 @@ impl Server {
             ServerBroadcastEvent::new(message.clone(), sender_name.clone());
 
             'after: {
-                for world in self.worlds.read().await.iter() {
+                for world in self.worlds.read().iter() {
                     world
                         .broadcast_message(&event.message, &event.sender, chat_type, target_name)
-                        .await;
+                        ;
                 }
             }
         }}
@@ -443,8 +435,8 @@ impl Server {
     /// # Note
     ///
     /// This function does not handle the actual mob spawn options update, which is a TODO item for future implementation.
-    pub async fn set_difficulty(&self, difficulty: Difficulty, force_update: Option<bool>) {
-        let mut level_info = self.level_info.write().await;
+    pub fn set_difficulty(&self, difficulty: Difficulty, force_update: Option<bool>) {
+        let mut level_info = self.level_info.write();
         if force_update.unwrap_or_default() || !level_info.difficulty_locked {
             level_info.difficulty = if BASIC_CONFIG.hardcore {
                 Difficulty::Hard
@@ -455,15 +447,14 @@ impl Server {
             // but its not implemented in Pumpkin yet
             // todo: update mob spawn options
 
-            for world in &*self.worlds.read().await {
-                world.level_info.write().await.difficulty = level_info.difficulty;
+            for world in &*self.worlds.read() {
+                world.level_info.write().difficulty = level_info.difficulty;
             }
 
             self.broadcast_packet_all(&CChangeDifficulty::new(
                 level_info.difficulty as u8,
                 level_info.difficulty_locked,
-            ))
-            .await;
+            ));
             drop(level_info);
         }
     }
@@ -480,21 +471,21 @@ impl Server {
     /// # Returns
     ///
     /// An `Option<Arc<Player>>` containing the player if found, or `None` if not found.
-    pub async fn get_player_by_name(&self, name: &str) -> Option<Arc<Player>> {
-        for world in self.worlds.read().await.iter() {
-            if let Some(player) = world.get_player_by_name(name).await {
+    pub fn get_player_by_name(&self, name: &str) -> Option<Arc<Player>> {
+        for world in self.worlds.read().iter() {
+            if let Some(player) = world.get_player_by_name(name) {
                 return Some(player);
             }
         }
         None
     }
 
-    pub async fn get_players_by_ip(&self, ip: IpAddr) -> Vec<Arc<Player>> {
+    pub fn get_players_by_ip(&self, ip: IpAddr) -> Vec<Arc<Player>> {
         let mut players = Vec::<Arc<Player>>::new();
 
-        for world in self.worlds.read().await.iter() {
-            for player in world.players.read().await.values() {
-                if player.client.address().await.ip() == ip {
+        for world in self.worlds.read().iter() {
+            for player in world.players.read().values() {
+                if player.client.address().ip() == ip {
                     players.push(player.clone());
                 }
             }
@@ -504,11 +495,11 @@ impl Server {
     }
 
     /// Returns all players from all worlds.
-    pub async fn get_all_players(&self) -> Vec<Arc<Player>> {
+    pub fn get_all_players(&self) -> Vec<Arc<Player>> {
         let mut players = Vec::<Arc<Player>>::new();
 
-        for world in self.worlds.read().await.iter() {
-            for player in world.players.read().await.values() {
+        for world in self.worlds.read().iter() {
+            for player in world.players.read().values() {
                 players.push(player.clone());
             }
         }
@@ -517,8 +508,8 @@ impl Server {
     }
 
     /// Returns a random player from any of the worlds, or `None` if all worlds are empty.
-    pub async fn get_random_player(&self) -> Option<Arc<Player>> {
-        let players = self.get_all_players().await;
+    pub fn get_random_player(&self) -> Option<Arc<Player>> {
+        let players = self.get_all_players();
 
         players.choose(&mut rand::rng()).map(Arc::<_>::clone)
     }
@@ -535,9 +526,9 @@ impl Server {
     /// # Returns
     ///
     /// An `Option<Arc<Player>>` containing the player if found, or `None` if not found.
-    pub async fn get_player_by_uuid(&self, id: uuid::Uuid) -> Option<Arc<Player>> {
-        for world in self.worlds.read().await.iter() {
-            if let Some(player) = world.get_player_by_uuid(id).await {
+    pub fn get_player_by_uuid(&self, id: uuid::Uuid) -> Option<Arc<Player>> {
+        for world in self.worlds.read().iter() {
+            if let Some(player) = world.get_player_by_uuid(id) {
                 return Some(player);
             }
         }
@@ -551,19 +542,19 @@ impl Server {
     /// # Returns
     ///
     /// The total number of players connected to the server.
-    pub async fn get_player_count(&self) -> usize {
+    pub fn get_player_count(&self) -> usize {
         let mut count = 0;
-        for world in self.worlds.read().await.iter() {
-            count += world.players.read().await.len();
+        for world in self.worlds.read().iter() {
+            count += world.players.read().len();
         }
         count
     }
 
     /// Similar to [`Server::get_player_count`] >= n, but may be more efficient since it stops its iteration through all worlds as soon as n players were found.
-    pub async fn has_n_players(&self, n: usize) -> bool {
+    pub fn has_n_players(&self, n: usize) -> bool {
         let mut count = 0;
-        for world in self.worlds.read().await.iter() {
-            count += world.players.read().await.len();
+        for world in self.worlds.read().iter() {
+            count += world.players.read().len();
             if count >= n {
                 return true;
             }
@@ -584,31 +575,14 @@ impl Server {
         &self.listing
     }
 
-    pub fn encryption_request<'a>(
-        &'a self,
-        verification_token: &'a [u8; 4],
-        should_authenticate: bool,
-    ) -> CEncryptionRequest<'a> {
-        self.key_store
-            .encryption_request("", verification_token, should_authenticate)
-    }
-
-    pub fn decrypt(&self, data: &[u8]) -> Result<Vec<u8>, EncryptionError> {
-        self.key_store.decrypt(data)
-    }
-
-    pub fn digest_secret(&self, secret: &[u8]) -> String {
-        self.key_store.get_digest(secret)
-    }
-
     /// Main server tick method. This now handles both player/network ticking (which always runs)
     /// and world/game logic ticking (which is affected by freeze state).
-    pub async fn tick(self: &Arc<Self>) {
+    pub fn tick(self: &Arc<Self>) {
         if self.tick_rate_manager.runs_normally() || self.tick_rate_manager.is_sprinting() {
-            self.tick_worlds().await;
+            self.tick_worlds();
             // Always run player and network ticking, even when game is frozen
         } else {
-            self.tick_players_and_network().await;
+            self.tick_players_and_network();
         }
     }
 
@@ -616,44 +590,36 @@ impl Server {
     /// This includes player ticking (network, keep-alives) and flushing world updates to clients.
     pub async fn tick_players_and_network(&self) {
         // First, flush pending block updates and synced block events to clients
-        for world in self.worlds.read().await.iter() {
-            world.flush_block_updates().await;
-            world.flush_synced_block_events().await;
+        for world in self.worlds.read().iter() {
+            world.flush_block_updates();
+            world.flush_synced_block_events();
         }
 
-        let players_to_tick: Vec<_> = self.get_all_players().await;
+        let players_to_tick: Vec<_> = self.get_all_players();
         for player in players_to_tick {
-            player.tick(self).await;
+            player.tick(self);
         }
     }
     /// Ticks the game logic for all worlds. This is the part that is affected by `/tick freeze`.
-    pub async fn tick_worlds(self: &Arc<Self>) {
-        let worlds = self.worlds.read().await.clone();
-        let mut handles = Vec::with_capacity(worlds.len());
-        for world in &worlds {
-            let world = world.clone();
-            let server = self.clone();
-            handles.push(tokio::spawn(async move {
-                world.tick(&server).await;
-            }));
-        }
-        for handle in handles {
-            // Wait for all world ticks to complete
-            let _ = handle.await;
-        }
+    pub fn tick_worlds(self: &Arc<Self>) {
+        let worlds = self.worlds.read().clone();
+        let server = self.as_ref();
+        worlds.par_iter().for_each(|world| {
+            world.tick(&server);
+        });
 
         // Global periodic tasks
-        if let Err(e) = self.player_data_storage.tick(self).await {
+        if let Err(e) = self.player_data_storage.tick(self) {
             log::error!("Error ticking player data: {e}");
         }
     }
 
     /// Updates the tick time statistics with the duration of the last tick.
-    pub async fn update_tick_times(&self, tick_duration_nanos: i64) {
+    pub fn update_tick_times(&self, tick_duration_nanos: i64) {
         let tick_count = self.tick_count.fetch_add(1, Ordering::Relaxed);
         let index = (tick_count % 100) as usize;
 
-        let mut tick_times = self.tick_times_nanos.lock().await;
+        let mut tick_times = self.tick_times_nanos.lock();
         let old_time = tick_times[index];
         tick_times[index] = tick_duration_nanos;
         drop(tick_times);
@@ -673,13 +639,13 @@ impl Server {
     }
 
     /// Returns a copy of the last 100 tick times.
-    pub async fn get_tick_times_nanos_copy(&self) -> [i64; 100] {
-        *self.tick_times_nanos.lock().await
+    pub fn get_tick_times_nanos_copy(&self) -> [i64; 100] {
+        *self.tick_times_nanos.lock()
     }
 
     #[allow(clippy::too_many_lines)]
     #[allow(clippy::option_if_let_else)]
-    pub async fn select_entities(
+    pub fn select_entities(
         &self,
         target_selector: &TargetSelector,
         source: Option<&CommandSender>,
@@ -700,7 +666,7 @@ impl Server {
                 }
             }
             EntitySelectorType::RandomPlayer => {
-                if let Some(player) = self.get_random_player().await {
+                if let Some(player) = self.get_random_player() {
                     vec![player as Arc<dyn EntityBase>].into_iter()
                 } else {
                     vec![].into_iter()
@@ -708,20 +674,18 @@ impl Server {
             }
             EntitySelectorType::AllPlayers => self
                 .get_all_players()
-                .await
                 .into_iter()
                 .map(|p| p as Arc<dyn EntityBase>)
                 .collect::<Vec<_>>()
                 .into_iter(),
             EntitySelectorType::AllEntities => {
                 let mut entities = Vec::new();
-                for world in self.worlds.read().await.iter() {
-                    entities.extend(world.entities.read().await.values().cloned());
+                for world in self.worlds.read().iter() {
+                    entities.extend(world.entities.read().values().cloned());
                     entities.extend(
                         world
                             .players
                             .read()
-                            .await
                             .values()
                             .cloned()
                             .map(|p| p as Arc<dyn EntityBase>),
@@ -730,14 +694,14 @@ impl Server {
                 entities.into_iter()
             }
             EntitySelectorType::NamedPlayer(name) => {
-                if let Some(player) = self.get_player_by_name(name).await {
+                if let Some(player) = self.get_player_by_name(name) {
                     vec![player as Arc<dyn EntityBase>].into_iter()
                 } else {
                     vec![].into_iter()
                 }
             }
             EntitySelectorType::Uuid(uuid) => {
-                if let Some(player) = self.get_player_by_uuid(*uuid).await {
+                if let Some(player) = self.get_player_by_uuid(*uuid) {
                     vec![player as Arc<dyn EntityBase>].into_iter()
                 } else {
                     vec![].into_iter()

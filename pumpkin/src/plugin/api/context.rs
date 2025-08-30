@@ -1,11 +1,11 @@
 use std::{any::Any, fs, path::Path, path::PathBuf, sync::Arc};
 
 use crate::command::client_suggestions;
+use parking_lot::RwLock;
 use pumpkin_util::{
     PermissionLvl,
     permission::{Permission, PermissionManager},
 };
-use tokio::sync::RwLock;
 
 use crate::{
     entity::player::Player,
@@ -76,8 +76,8 @@ impl Context {
     ///
     /// # Returns
     /// An optional reference to the player if found, or `None` if not.
-    pub async fn get_player_by_name(&self, player_name: String) -> Option<Arc<Player>> {
-        self.server.get_player_by_name(&player_name).await
+    pub fn get_player_by_name(&self, player_name: String) -> Option<Arc<Player>> {
+        self.server.get_player_by_name(&player_name)
     }
 
     /// Registers a service with the plugin context.
@@ -94,10 +94,10 @@ impl Context {
     /// # Example
     ///
     /// ```
-    /// context.register_service("my_service".to_string(), Arc::new(MyService::new())).await;
+    /// context.register_service("my_service".to_string(), Arc::new(MyService::new()));
     /// ```
-    pub async fn register_service<T: Any + Send + Sync>(&self, name: String, service: Arc<T>) {
-        let mut services = self.plugin_manager.services.write().await;
+    pub fn register_service<T: Any + Send + Sync>(&self, name: String, service: Arc<T>) {
+        let mut services = self.plugin_manager.services.write();
         services.insert(name, service);
     }
 
@@ -118,12 +118,12 @@ impl Context {
     /// # Example
     ///
     /// ```
-    /// if let Some(service) = context.get_service::<MyService>("my_service").await {
+    /// if let Some(service) = context.get_service::<MyService>("my_service") {
     ///     // Use the service
     /// }
     /// ```
-    pub async fn get_service<T: Any + Send + Sync>(&self, name: &str) -> Option<Arc<T>> {
-        let services = self.plugin_manager.services.read().await;
+    pub fn get_service<T: Any + Send + Sync>(&self, name: &str) -> Option<Arc<T>> {
+        let services = self.plugin_manager.services.read();
         services.get(name)?.clone().downcast::<T>().ok()
     }
 
@@ -132,11 +132,7 @@ impl Context {
     /// # Arguments
     /// - `tree`: The command tree to register.
     /// - `permission`: The permission level required to execute the command.
-    pub async fn register_command(
-        &self,
-        tree: crate::command::tree::CommandTree,
-        permission_node: &str,
-    ) {
+    pub fn register_command(&self, tree: crate::command::tree::CommandTree, permission_node: &str) {
         let plugin_name = self.metadata.name;
         let full_permission_node = if permission_node.contains(':') {
             permission_node.to_string()
@@ -145,14 +141,14 @@ impl Context {
         };
 
         {
-            let mut dispatcher_lock = self.server.command_dispatcher.write().await;
+            let mut dispatcher_lock = self.server.command_dispatcher.write();
             dispatcher_lock.register(tree, full_permission_node.as_str());
         };
 
-        for world in self.server.worlds.read().await.iter() {
-            for player in world.players.read().await.values() {
-                let command_dispatcher = self.server.command_dispatcher.read().await;
-                client_suggestions::send_c_commands_packet(player, &command_dispatcher).await;
+        for world in self.server.worlds.read().iter() {
+            for player in world.players.read().values() {
+                let command_dispatcher = self.server.command_dispatcher.read();
+                client_suggestions::send_c_commands_packet(player, &command_dispatcher);
             }
         }
     }
@@ -161,22 +157,22 @@ impl Context {
     ///
     /// # Arguments
     /// - `name`: The name of the command to unregister.
-    pub async fn unregister_command(&self, name: &str) {
+    pub fn unregister_command(&self, name: &str) {
         {
-            let mut dispatcher_lock = self.server.command_dispatcher.write().await;
+            let mut dispatcher_lock = self.server.command_dispatcher.write();
             dispatcher_lock.unregister(name);
         };
 
-        for world in self.server.worlds.read().await.iter() {
-            for player in world.players.read().await.values() {
-                let command_dispatcher = self.server.command_dispatcher.read().await;
-                client_suggestions::send_c_commands_packet(player, &command_dispatcher).await;
+        for world in self.server.worlds.read().iter() {
+            for player in world.players.read().values() {
+                let command_dispatcher = self.server.command_dispatcher.read();
+                client_suggestions::send_c_commands_packet(player, &command_dispatcher);
             }
         }
     }
 
     /// Register a permission for this plugin
-    pub async fn register_permission(&self, permission: Permission) -> Result<(), String> {
+    pub fn register_permission(&self, permission: Permission) -> Result<(), String> {
         // Ensure the permission has the correct namespace
         let plugin_name = self.metadata.name;
 
@@ -187,21 +183,19 @@ impl Context {
             ));
         }
 
-        let registry = &self.permission_manager.read().await.registry;
-        registry.write().await.register_permission(permission)
+        let registry = &self.permission_manager.read().registry;
+        registry.write().register_permission(permission)
     }
 
     /// Check if a player has a permission
-    pub async fn player_has_permission(&self, player_uuid: &uuid::Uuid, permission: &str) -> bool {
-        let permission_manager = self.permission_manager.read().await;
+    pub fn player_has_permission(&self, player_uuid: &uuid::Uuid, permission: &str) -> bool {
+        let permission_manager = self.permission_manager.read();
 
         // If the player isn't online, we need to find their op level
-        let player_op_level = (self.server.get_player_by_uuid(*player_uuid).await)
+        let player_op_level = (self.server.get_player_by_uuid(*player_uuid))
             .map_or(PermissionLvl::Zero, |player| player.permission_lvl.load());
 
-        permission_manager
-            .has_permission(player_uuid, permission, player_op_level)
-            .await
+        permission_manager.has_permission(player_uuid, permission, player_op_level)
     }
 
     /// Asynchronously registers an event handler for a specific event type.
@@ -217,7 +211,7 @@ impl Context {
     ///
     /// # Constraints
     /// The handler must implement the `EventHandler<E>` trait.
-    pub async fn register_event<E: Event + 'static, H>(
+    pub fn register_event<E: Event + 'static, H>(
         &self,
         handler: Arc<H>,
         priority: EventPriority,
@@ -225,7 +219,7 @@ impl Context {
     ) where
         H: EventHandler<E> + 'static,
     {
-        let mut handlers = self.handlers.write().await;
+        let mut handlers = self.handlers.write();
 
         let handlers_vec = handlers
             .entry(E::get_name_static())
@@ -258,15 +252,15 @@ impl Context {
     /// ```no_run
     /// // Create and register a custom Lua plugin loader
     /// let lua_loader = Arc::new(LuaPluginLoader::new());
-    /// context.register_plugin_loader(lua_loader).await;
+    /// context.register_plugin_loader(lua_loader);
     /// ```
-    pub async fn register_plugin_loader(
+    pub fn register_plugin_loader(
         &self,
         loader: Arc<dyn crate::plugin::loader::PluginLoader>,
     ) -> bool {
-        let before_count = self.plugin_manager.loaded_plugins().await.len();
-        self.plugin_manager.add_loader(loader).await;
-        let after_count = self.plugin_manager.loaded_plugins().await.len();
+        let before_count = self.plugin_manager.loaded_plugins().len();
+        self.plugin_manager.add_loader(loader);
+        let after_count = self.plugin_manager.loaded_plugins().len();
 
         // Return true if any new plugins were loaded
         after_count > before_count

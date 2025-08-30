@@ -5,7 +5,7 @@ use crate::command::args::{
 use crate::command::dispatcher::CommandError;
 use crate::command::tree::RawArgs;
 use crate::server::Server;
-use async_trait::async_trait;
+
 use pumpkin_protocol::java::client::play::{ArgumentType, CommandSuggestion, SuggestionProviders};
 
 pub struct ResourceLocationArgumentConsumer {
@@ -22,9 +22,9 @@ impl GetClientSideArgParser for ResourceLocationArgumentConsumer {
     }
 }
 
-#[async_trait]
+
 impl ArgumentConsumer for ResourceLocationArgumentConsumer {
-    async fn consume<'a>(
+    fn consume<'a>(
         &'a self,
         _sender: &CommandSender,
         _server: &'a Server,
@@ -33,7 +33,7 @@ impl ArgumentConsumer for ResourceLocationArgumentConsumer {
         Some(Arg::ResourceLocation(args.pop()?))
     }
 
-    async fn suggest<'a>(
+    fn suggest<'a>(
         &'a self,
         _sender: &CommandSender,
         _server: &'a Server,
@@ -47,7 +47,7 @@ impl ArgumentConsumer for ResourceLocationArgumentConsumer {
         // let suggestions = server
         //     .bossbars
         //     .lock()
-        //     .await
+        //
         //     .custom_bossbars
         //     .keys()
         //     .map(|suggestion| CommandSuggestion::new(suggestion, None))

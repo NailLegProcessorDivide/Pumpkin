@@ -9,7 +9,7 @@ use crate::{
     data::{SaveJSONConfiguration, op_data::OPERATOR_CONFIG},
 };
 use CommandError::InvalidConsumption;
-use async_trait::async_trait;
+
 use pumpkin_config::{BASIC_CONFIG, op::Op};
 use pumpkin_util::text::TextComponent;
 
@@ -19,15 +19,15 @@ const ARG_TARGETS: &str = "targets";
 
 struct Executor;
 
-#[async_trait]
+
 impl CommandExecutor for Executor {
-    async fn execute<'a>(
+    fn execute<'a>(
         &self,
         sender: &mut CommandSender,
         server: &crate::server::Server,
         args: &ConsumedArgs<'a>,
     ) -> Result<(), CommandError> {
-        let mut config = OPERATOR_CONFIG.write().await;
+        let mut config = OPERATOR_CONFIG.write();
 
         let Some(Arg::Players(targets)) = args.get(&ARG_TARGETS) else {
             return Err(InvalidConsumption(Some(ARG_TARGETS.into())));
@@ -39,9 +39,7 @@ impl CommandExecutor for Executor {
                 .min(sender.permission_lvl());
 
             if player.permission_lvl.load() == new_level {
-                sender
-                    .send_message(TextComponent::translate("commands.op.failed", []))
-                    .await;
+                sender.send_message(TextComponent::translate("commands.op.failed", []));
                 continue;
             }
 
@@ -64,18 +62,14 @@ impl CommandExecutor for Executor {
             config.save();
 
             {
-                let command_dispatcher = server.command_dispatcher.read().await;
-                player
-                    .set_permission_lvl(new_level, &command_dispatcher)
-                    .await;
+                let command_dispatcher = server.command_dispatcher.read();
+                player.set_permission_lvl(new_level, &command_dispatcher);
             };
 
-            sender
-                .send_message(TextComponent::translate(
-                    "commands.op.success",
-                    [player.get_display_name().await],
-                ))
-                .await;
+            sender.send_message(TextComponent::translate(
+                "commands.op.success",
+                [player.get_display_name()],
+            ));
         }
 
         Ok(())

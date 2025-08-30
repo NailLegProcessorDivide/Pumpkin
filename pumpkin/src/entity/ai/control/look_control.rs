@@ -64,7 +64,7 @@ impl LookControl {
         self.look_at_timer.store(2, Relaxed);
     }
 
-    pub async fn tick(&self, mob: &dyn Mob) {
+    pub fn tick(&self, mob: &dyn Mob) {
         let entity = mob.get_entity();
         if Self::should_stay_horizontal() {
             entity.set_pitch(0.0);
@@ -94,16 +94,16 @@ impl LookControl {
             ));
         }
 
-        self.clamp_head_yaw(mob).await;
+        self.clamp_head_yaw(mob);
     }
 
     fn should_stay_horizontal() -> bool {
         true
     }
 
-    async fn clamp_head_yaw(&self, mob: &dyn Mob) {
+    fn clamp_head_yaw(&self, mob: &dyn Mob) {
         let mob_entity = mob.get_mob_entity();
-        let navigator = mob_entity.navigator.lock().await;
+        let navigator = mob_entity.navigator.lock();
         if !navigator.is_idle() {
             let entity = &mob_entity.living_entity.entity;
             let max_head_rotation = mob.get_max_head_rotation() as f32;

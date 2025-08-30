@@ -1,4 +1,3 @@
-use async_trait::async_trait;
 use pumpkin_data::world::{MSG_COMMAND_INCOMING, MSG_COMMAND_OUTGOING};
 use pumpkin_util::text::TextComponent;
 
@@ -22,9 +21,9 @@ const ARG_MESSAGE: &str = "message";
 
 struct Executor;
 
-#[async_trait]
+
 impl CommandExecutor for Executor {
-    async fn execute<'a>(
+    fn execute<'a>(
         &self,
         sender: &mut CommandSender,
         _server: &crate::server::Server,
@@ -37,24 +36,20 @@ impl CommandExecutor for Executor {
         let player = sender.as_player().ok_or(CommandError::InvalidRequirement)?;
 
         for target in targets {
-            player
-                .send_message(
-                    &TextComponent::text(msg.clone()),
-                    MSG_COMMAND_OUTGOING,
-                    &player.get_display_name().await,
-                    Some(&target.get_display_name().await),
-                )
-                .await;
+            player.send_message(
+                &TextComponent::text(msg.clone()),
+                MSG_COMMAND_OUTGOING,
+                &player.get_display_name(),
+                Some(&target.get_display_name()),
+            );
         }
         for target in targets {
-            target
-                .send_message(
-                    &TextComponent::text(msg.clone()),
-                    MSG_COMMAND_INCOMING,
-                    &player.get_display_name().await,
-                    Some(&target.get_display_name().await),
-                )
-                .await;
+            target.send_message(
+                &TextComponent::text(msg.clone()),
+                MSG_COMMAND_INCOMING,
+                &player.get_display_name(),
+                Some(&target.get_display_name()),
+            );
         }
 
         Ok(())

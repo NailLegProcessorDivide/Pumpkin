@@ -1,4 +1,4 @@
-use async_trait::async_trait;
+
 use pumpkin_protocol::java::client::play::{
     ArgumentType, CommandSuggestion, StringProtoArgBehavior, SuggestionProviders,
 };
@@ -27,9 +27,9 @@ impl GetClientSideArgParser for SimpleArgConsumer {
     }
 }
 
-#[async_trait]
+
 impl ArgumentConsumer for SimpleArgConsumer {
-    async fn consume<'a>(
+    fn consume<'a>(
         &'a self,
         _sender: &CommandSender,
         _server: &'a Server,
@@ -38,7 +38,7 @@ impl ArgumentConsumer for SimpleArgConsumer {
         Some(Arg::Simple(args.pop()?))
     }
 
-    async fn suggest<'a>(
+    fn suggest<'a>(
         &'a self,
         _sender: &CommandSender,
         _server: &'a Server,

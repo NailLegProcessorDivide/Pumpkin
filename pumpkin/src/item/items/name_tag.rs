@@ -3,7 +3,7 @@ use std::sync::Arc;
 use crate::entity::EntityBase;
 use crate::entity::player::Player;
 use crate::item::{ItemBehaviour, ItemMetadata};
-use async_trait::async_trait;
+
 use pumpkin_data::data_component_impl::CustomNameImpl;
 use pumpkin_data::item::Item;
 use pumpkin_util::text::TextComponent;
@@ -17,9 +17,9 @@ impl ItemMetadata for NameTagItem {
     }
 }
 
-#[async_trait]
+
 impl ItemBehaviour for NameTagItem {
-    async fn use_on_entity(
+    fn use_on_entity(
         &self,
         item: &mut ItemStack,
         player: &Player,
@@ -30,7 +30,7 @@ impl ItemBehaviour for NameTagItem {
             && let Some(name) = item.get_data_component::<CustomNameImpl>()
         {
             // TODO
-            entity.set_custom_name(TextComponent::text(name.name)).await;
+            entity.set_custom_name(TextComponent::text(name.name));
             item.decrement_unless_creative(player.gamemode.load(), 1);
         }
     }

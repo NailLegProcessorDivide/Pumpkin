@@ -25,14 +25,14 @@ impl ItemRegistry {
         }
     }
 
-    pub async fn on_use(&self, item: &Item, player: &Player) {
+    pub fn on_use(&self, item: &Item, player: &Player) {
         let pumpkin_item = self.get_pumpkin_item(item);
         if let Some(pumpkin_item) = pumpkin_item {
-            pumpkin_item.normal_use(item, player).await;
+            pumpkin_item.normal_use(item, player);
         }
     }
 
-    pub async fn use_on_block(
+    pub fn use_on_block(
         &self,
         stack: &mut ItemStack,
         player: &Player,
@@ -43,13 +43,11 @@ impl ItemRegistry {
     ) {
         let pumpkin_item = self.get_pumpkin_item(stack.item);
         if let Some(pumpkin_item) = pumpkin_item {
-            pumpkin_item
-                .use_on_block(stack, player, location, face, block, server)
-                .await;
+            pumpkin_item.use_on_block(stack, player, location, face, block, server);
         }
     }
 
-    pub async fn use_on_entity(
+    pub fn use_on_entity(
         &self,
         stack: &mut ItemStack,
         player: &Player,
@@ -57,7 +55,7 @@ impl ItemRegistry {
     ) {
         let pumpkin_item = self.get_pumpkin_item(stack.item);
         if let Some(pumpkin_item) = pumpkin_item {
-            pumpkin_item.use_on_entity(stack, player, entity).await;
+            pumpkin_item.use_on_entity(stack, player, entity);
         }
     }
 

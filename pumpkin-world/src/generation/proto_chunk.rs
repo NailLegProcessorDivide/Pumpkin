@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use pumpkin_data::tag;
 use pumpkin_data::{
     Block, BlockState, block_properties::blocks_movement, chunk::Biome, tag::Taggable,
@@ -807,20 +806,16 @@ impl<'a> ProtoChunk<'a> {
     }
 }
 
-#[async_trait]
 impl BlockAccessor for ProtoChunk<'_> {
-    async fn get_block(&self, position: &BlockPos) -> &'static pumpkin_data::Block {
+    fn get_block(&self, position: &BlockPos) -> &'static pumpkin_data::Block {
         self.get_block_state(&position.0).to_block()
     }
 
-    async fn get_block_state(&self, position: &BlockPos) -> &'static pumpkin_data::BlockState {
+    fn get_block_state(&self, position: &BlockPos) -> &'static pumpkin_data::BlockState {
         self.get_block_state(&position.0).to_state()
     }
 
-    async fn get_block_and_state(
-        &self,
-        position: &BlockPos,
-    ) -> (&'static Block, &'static BlockState) {
+    fn get_block_and_state(&self, position: &BlockPos) -> (&'static Block, &'static BlockState) {
         let id = self.get_block_state(&position.0);
         BlockState::from_id_with_block(id.0)
     }

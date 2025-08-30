@@ -1,4 +1,4 @@
-use async_trait::async_trait;
+
 use pumpkin_data::Block;
 use pumpkin_data::tag::{RegistryKey, get_tag_ids};
 use pumpkin_protocol::java::client::play::{ArgumentType, CommandSuggestion, SuggestionProviders};
@@ -26,9 +26,9 @@ impl GetClientSideArgParser for BlockArgumentConsumer {
     }
 }
 
-#[async_trait]
+
 impl ArgumentConsumer for BlockArgumentConsumer {
-    async fn consume<'a>(
+    fn consume<'a>(
         &'a self,
         _sender: &CommandSender,
         _server: &'a Server,
@@ -38,7 +38,7 @@ impl ArgumentConsumer for BlockArgumentConsumer {
         Some(Arg::Block(s))
     }
 
-    async fn suggest<'a>(
+    fn suggest<'a>(
         &'a self,
         _sender: &CommandSender,
         _server: &'a Server,
@@ -101,9 +101,9 @@ impl GetClientSideArgParser for BlockPredicateArgumentConsumer {
     }
 }
 
-#[async_trait]
+
 impl ArgumentConsumer for BlockPredicateArgumentConsumer {
-    async fn consume<'a>(
+    fn consume<'a>(
         &'a self,
         _sender: &CommandSender,
         _server: &'a Server,
@@ -113,7 +113,7 @@ impl ArgumentConsumer for BlockPredicateArgumentConsumer {
         Some(Arg::BlockPredicate(s))
     }
 
-    async fn suggest<'a>(
+    fn suggest<'a>(
         &'a self,
         _sender: &CommandSender,
         _server: &'a Server,

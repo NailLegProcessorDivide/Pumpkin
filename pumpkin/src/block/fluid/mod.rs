@@ -5,7 +5,7 @@ pub mod water;
 use std::sync::Arc;
 
 use crate::entity::{EntityBase, player::Player};
-use async_trait::async_trait;
+
 use pumpkin_data::BlockDirection;
 use pumpkin_data::{fluid::Fluid, item::Item};
 use pumpkin_protocol::java::server::play::SUseItemOn;
@@ -16,9 +16,8 @@ use crate::{server::Server, world::World};
 
 use super::{BlockIsReplacing, registry::BlockActionResult};
 
-#[async_trait]
 pub trait FluidBehaviour: Send + Sync {
-    async fn normal_use(
+    fn normal_use(
         &self,
         _fluid: &Fluid,
         _player: &Player,
@@ -27,7 +26,7 @@ pub trait FluidBehaviour: Send + Sync {
         _world: &Arc<World>,
     ) {
     }
-    async fn use_with_item(
+    fn use_with_item(
         &self,
         _fluid: &Fluid,
         _player: &Player,
@@ -39,7 +38,7 @@ pub trait FluidBehaviour: Send + Sync {
         BlockActionResult::Pass
     }
 
-    async fn placed(
+    fn placed(
         &self,
         _world: &Arc<World>,
         _fluid: &Fluid,
@@ -51,7 +50,7 @@ pub trait FluidBehaviour: Send + Sync {
     }
 
     #[allow(clippy::too_many_arguments)]
-    async fn on_place(
+    fn on_place(
         &self,
         _server: &Server,
         _world: &Arc<World>,
@@ -64,7 +63,7 @@ pub trait FluidBehaviour: Send + Sync {
         fluid.default_state_index
     }
 
-    async fn get_state_for_neighbour_update(
+    fn get_state_for_neighbour_update(
         &self,
         _world: &Arc<World>,
         _fluid: &Fluid,
@@ -74,7 +73,7 @@ pub trait FluidBehaviour: Send + Sync {
         0
     }
 
-    async fn on_neighbor_update(
+    fn on_neighbor_update(
         &self,
         _world: &Arc<World>,
         _fluid: &Fluid,
@@ -83,11 +82,11 @@ pub trait FluidBehaviour: Send + Sync {
     ) {
     }
 
-    async fn on_entity_collision(&self, _entity: &dyn EntityBase) {}
+    fn on_entity_collision(&self, _entity: &dyn EntityBase) {}
 
-    async fn on_scheduled_tick(&self, _world: &Arc<World>, _fluid: &Fluid, _block_pos: &BlockPos) {}
+    fn on_scheduled_tick(&self, _world: &Arc<World>, _fluid: &Fluid, _block_pos: &BlockPos) {}
 
-    async fn random_tick(&self, _fluid: &Fluid, _world: &Arc<World>, _block_pos: &BlockPos) {}
+    fn random_tick(&self, _fluid: &Fluid, _world: &Arc<World>, _block_pos: &BlockPos) {}
 
-    async fn create_legacy_block(&self, _world: &Arc<World>, _block_pos: &BlockPos) {}
+    fn create_legacy_block(&self, _world: &Arc<World>, _block_pos: &BlockPos) {}
 }

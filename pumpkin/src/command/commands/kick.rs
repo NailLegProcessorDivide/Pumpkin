@@ -1,4 +1,3 @@
-use async_trait::async_trait;
 use pumpkin_util::text::TextComponent;
 use pumpkin_util::text::color::NamedColor;
 
@@ -22,9 +21,9 @@ const ARG_REASON: &str = "reason";
 
 struct Executor;
 
-#[async_trait]
+
 impl CommandExecutor for Executor {
-    async fn execute<'a>(
+    fn execute<'a>(
         &self,
         sender: &mut CommandSender,
         _server: &crate::server::Server,
@@ -40,10 +39,10 @@ impl CommandExecutor for Executor {
         };
 
         for target in targets {
-            target.kick(DisconnectReason::Kicked, reason.clone()).await;
+            target.kick(DisconnectReason::Kicked, reason.clone());
             let mut msg = TextComponent::text("Kicked: ");
-            msg = msg.add_child(target.get_display_name().await);
-            sender.send_message(msg.color_named(NamedColor::Blue)).await;
+            msg = msg.add_child(target.get_display_name());
+            sender.send_message(msg.color_named(NamedColor::Blue));
         }
 
         Ok(())

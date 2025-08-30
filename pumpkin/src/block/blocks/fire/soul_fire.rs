@@ -1,4 +1,4 @@
-use async_trait::async_trait;
+
 use pumpkin_data::tag::Taggable;
 use pumpkin_data::{Block, tag};
 use pumpkin_macros::pumpkin_block;
@@ -18,24 +18,24 @@ impl SoulFireBlock {
     }
 }
 
-#[async_trait]
+
 impl BlockBehaviour for SoulFireBlock {
-    async fn get_state_for_neighbor_update(
+    fn get_state_for_neighbor_update(
         &self,
         args: GetStateForNeighborUpdateArgs<'_>,
     ) -> BlockStateId {
-        if !Self::is_soul_base(args.world.get_block(&args.position.down()).await) {
+        if !Self::is_soul_base(args.world.get_block(&args.position.down())) {
             return Block::AIR.default_state.id;
         }
 
         args.state_id
     }
 
-    async fn can_place_at(&self, args: CanPlaceAtArgs<'_>) -> bool {
-        Self::is_soul_base(args.block_accessor.get_block(&args.position.down()).await)
+    fn can_place_at(&self, args: CanPlaceAtArgs<'_>) -> bool {
+        Self::is_soul_base(args.block_accessor.get_block(&args.position.down()))
     }
 
-    async fn broken(&self, args: BrokenArgs<'_>) {
-        FireBlockBase::broken(args.world.clone(), *args.position).await;
+    fn broken(&self, args: BrokenArgs<'_>) {
+        FireBlockBase::broken(args.world.clone(), *args.position);
     }
 }

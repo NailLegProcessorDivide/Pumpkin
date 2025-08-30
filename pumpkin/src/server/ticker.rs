@@ -1,74 +1,66 @@
-use crate::{SHOULD_STOP, server::Server};
+use crate::SHOULD_STOP;
+use crossbeam::atomic::AtomicCell;
 use std::{
-    sync::{Arc, atomic::Ordering},
+    cell::RefCell,
+    collections::VecDeque,
+    num::NonZeroU32,
+    sync::atomic::Ordering,
+    thread::sleep,
     time::{Duration, Instant},
 };
-use tokio::time::sleep;
 
 pub struct Ticker {
     last_tick: Instant,
-}
-
-impl Default for Ticker {
-    fn default() -> Self {
-        Self::new()
-    }
+    target_tick_rate: AtomicCell<Option<NonZeroU32>>,
+    performance_history: RefCell<VecDeque<u128>>,
+    history_duration: usize,
 }
 
 impl Ticker {
     #[must_use]
-    pub fn new() -> Self {
+    pub fn new(target_freq: Option<NonZeroU32>) -> Self {
         Self {
             last_tick: Instant::now(),
+            target_tick_rate: AtomicCell::new(target_freq),
+            performance_history: RefCell::new(VecDeque::new()),
+            history_duration: 100,
         }
     }
 
     /// IMPORTANT: Run this in a new thread/tokio task.
-    pub async fn run(&mut self, server: &Arc<Server>) {
+    pub async fn run<F>(&mut self, mut run_fn: F)
+    where
+        F: FnMut(),
+    {
+        let mut last_tick_time = Instant::now();
         while !SHOULD_STOP.load(Ordering::Relaxed) {
             let tick_start_time = Instant::now();
-            let manager = &server.tick_rate_manager;
-
-            manager.tick();
-
-            // Now server.tick() handles both player/network ticking (always)
-            // and world logic ticking (conditionally based on freeze state)
-            if manager.is_sprinting() {
-                // A sprint is active, so we tick.
-                manager.start_sprint_tick_work();
-                server.tick().await;
-
-                // After ticking, end the work and check if the sprint is over.
-                if manager.end_sprint_tick_work() {
-                    // This was the last sprint tick. Finish the sprint and restore the previous state.
-                    manager.finish_tick_sprint(server).await;
+            if let Some(target_rate) = self.target_tick_rate.load() {
+                let period = 1.0 / u32::from(target_rate) as f64;
+                // Add period to last tick to account for skew more effectively
+                last_tick_time += Duration::from_secs_f64(period);
+                // If the server is running slow, report lag and jump the target time forward
+                // The server will run slower over time than it should but theres nothing we can do
+                if tick_start_time > last_tick_time + Duration::from_millis(200) {
+                    log::warn!(
+                        "Server running slow, {}ms behind target tick rate, skipping ticks",
+                        (tick_start_time - last_tick_time).as_millis()
+                    );
+                    last_tick_time = tick_start_time;
+                } else if tick_start_time < last_tick_time {
+                    sleep(last_tick_time - tick_start_time);
                 }
-            } else {
-                // Always call tick - it will internally decide what to tick based on frozen state
-                server.tick().await;
             }
-
-            // Record the total time this tick took
-            let tick_duration_nanos = tick_start_time.elapsed().as_nanos() as i64;
-            server.update_tick_times(tick_duration_nanos).await;
-
-            // Sleep logic remains the same
-            let now = Instant::now();
-            let elapsed = now.duration_since(self.last_tick);
-
-            let tick_interval = if manager.is_sprinting() {
-                Duration::ZERO
-            } else {
-                Duration::from_nanos(manager.nanoseconds_per_tick() as u64)
-            };
-
-            if let Some(sleep_time) = tick_interval.checked_sub(elapsed)
-                && !sleep_time.is_zero()
+            let start_time = Instant::now();
+            run_fn();
+            let end_time = Instant::now();
             {
-                sleep(sleep_time).await;
+                let mut perf_history = self.performance_history.borrow_mut();
+                if perf_history.len() > 100 {
+                    perf_history.pop_front();
+                }
+                perf_history.push_back((end_time - start_time).as_micros());
             }
-
-            self.last_tick = Instant::now();
         }
         log::debug!("Ticker stopped");
     }

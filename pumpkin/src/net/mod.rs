@@ -26,8 +26,11 @@ use thiserror::Error;
 use uuid::Uuid;
 pub mod authentication;
 pub mod bedrock;
+mod console;
 pub mod java;
+mod key_store;
 pub mod lan_broadcast;
+pub mod net_thread;
 mod proxy;
 pub mod query;
 pub mod rcon;
@@ -95,38 +98,11 @@ pub enum PacketHandlerState {
 /// This is just a Wrapper for both Java & Bedrock connections
 #[derive(Clone)]
 pub enum ClientPlatform {
-    Java(Arc<JavaClient>),
-    Bedrock(Arc<BedrockClient>),
+    Java,
+    Bedrock,
 }
 
 impl ClientPlatform {
-    pub async fn address(&self) -> SocketAddr {
-        match self {
-            Self::Java(java) => *java.address.lock().await,
-            Self::Bedrock(bedrock) => bedrock.address,
-        }
-    }
-
-    /// This function should only be used where you know that the client is bedrock!
-    #[inline]
-    #[must_use]
-    pub fn bedrock(&self) -> &Arc<BedrockClient> {
-        if let Self::Bedrock(client) = self {
-            return client;
-        }
-        unreachable!()
-    }
-
-    /// This function should only be used where you know that the client is java!
-    #[inline]
-    #[must_use]
-    pub fn java(&self) -> &Arc<JavaClient> {
-        if let Self::Java(client) = self {
-            return client;
-        }
-        unreachable!()
-    }
-
     #[must_use]
     pub fn closed(&self) -> bool {
         match self {
@@ -153,9 +129,9 @@ impl ClientPlatform {
         }
     }
 
-    pub async fn enqueue_packet<P: ClientPacket>(&self, packet: &P) {
+    pub fn enqueue_packet<P: ClientPacket>(&self, packet: &P) {
         match self {
-            Self::Java(java) => java.enqueue_packet(packet).await,
+            Self::Java(java) => java.enqueue_packet(packet),
             Self::Bedrock(_) => (),
         }
     }
@@ -184,7 +160,7 @@ pub async fn can_not_join(
         "[year]-[month]-[day] at [hour]:[minute]:[second] [offset_hour sign:mandatory]:[offset_minute]"
     );
 
-    let mut banned_players = BANNED_PLAYER_LIST.write().await;
+    let mut banned_players = BANNED_PLAYER_LIST.write();
     if let Some(entry) = banned_players.get_entry(profile) {
         let text = TextComponent::translate(
             "multiplayer.disconnect.banned.reason",
@@ -203,8 +179,8 @@ pub async fn can_not_join(
     drop(banned_players);
 
     if server.white_list.load(Ordering::Relaxed) {
-        let ops = OPERATOR_CONFIG.read().await;
-        let whitelist = WHITELIST_CONFIG.read().await;
+        let ops = OPERATOR_CONFIG.read();
+        let whitelist = WHITELIST_CONFIG.read();
 
         if ops.get_entry(&profile.id).is_none() && !whitelist.is_whitelisted(profile) {
             return Some(TextComponent::translate(
@@ -214,7 +190,7 @@ pub async fn can_not_join(
         }
     }
 
-    if let Some(entry) = BANNED_IP_LIST.write().await.get_entry(&address.ip()) {
+    if let Some(entry) = BANNED_IP_LIST.write().get_entry(&address.ip()) {
         let text = TextComponent::translate(
             "multiplayer.disconnect.banned_ip.reason",
             [TextComponent::text(entry.reason.clone())],

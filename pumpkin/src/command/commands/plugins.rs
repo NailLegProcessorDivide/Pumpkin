@@ -1,4 +1,3 @@
-use async_trait::async_trait;
 use pumpkin_util::text::{TextComponent, color::NamedColor, hover::HoverEvent};
 
 use crate::{
@@ -14,15 +13,15 @@ const DESCRIPTION: &str = "List all available plugins.";
 
 struct Executor;
 
-#[async_trait]
+
 impl CommandExecutor for Executor {
-    async fn execute<'a>(
+    fn execute<'a>(
         &self,
         sender: &mut CommandSender,
         _server: &crate::server::Server,
         _args: &ConsumedArgs<'a>,
     ) -> Result<(), CommandError> {
-        let plugins = PLUGIN_MANAGER.active_plugins().await;
+        let plugins = PLUGIN_MANAGER.active_plugins();
 
         let message_text = if plugins.is_empty() {
             "There are no loaded plugins.".to_string()
@@ -49,7 +48,7 @@ impl CommandExecutor for Executor {
             message = message.add_child(component);
         }
 
-        sender.send_message(message).await;
+        sender.send_message(message);
 
         Ok(())
     }

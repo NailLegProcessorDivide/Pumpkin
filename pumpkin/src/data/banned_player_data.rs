@@ -7,8 +7,8 @@ use crate::net::GameProfile;
 
 use super::{LoadJSONConfiguration, SaveJSONConfiguration, banlist_serializer::BannedPlayerEntry};
 
-pub static BANNED_PLAYER_LIST: LazyLock<tokio::sync::RwLock<BannedPlayerList>> =
-    LazyLock::new(|| tokio::sync::RwLock::new(BannedPlayerList::load()));
+pub static BANNED_PLAYER_LIST: LazyLock<parking_lot::RwLock<BannedPlayerList>> =
+    LazyLock::new(|| parking_lot::RwLock::new(BannedPlayerList::load()));
 
 #[derive(Deserialize, Serialize, Default)]
 #[serde(transparent)]

@@ -3,7 +3,7 @@ use crate::block::registry::BlockActionResult;
 use crate::block::{BlockBehaviour, NormalUseArgs, OnNeighborUpdateArgs, OnPlaceArgs};
 use crate::entity::player::Player;
 use crate::world::World;
-use async_trait::async_trait;
+
 use pumpkin_data::BlockDirection;
 use pumpkin_data::block_properties::{BlockHalf, BlockProperties};
 use pumpkin_data::sound::{Sound, SoundCategory};
@@ -17,27 +17,23 @@ use std::sync::Arc;
 
 type TrapDoorProperties = pumpkin_data::block_properties::OakTrapdoorLikeProperties;
 
-async fn toggle_trapdoor(player: &Player, world: &Arc<World>, block_pos: &BlockPos) {
-    let (block, block_state) = world.get_block_and_state_id(block_pos).await;
+fn toggle_trapdoor(player: &Player, world: &Arc<World>, block_pos: &BlockPos) {
+    let (block, block_state) = world.get_block_and_state_id(block_pos);
     let mut trapdoor_props = TrapDoorProperties::from_state_id(block_state, block);
     trapdoor_props.open = !trapdoor_props.open;
 
-    world
-        .play_block_sound_expect(
-            player,
-            get_sound(block, trapdoor_props.open),
-            SoundCategory::Blocks,
-            *block_pos,
-        )
-        .await;
+    world.play_block_sound_expect(
+        player,
+        get_sound(block, trapdoor_props.open),
+        SoundCategory::Blocks,
+        *block_pos,
+    );
 
-    world
-        .set_block_state(
-            block_pos,
-            trapdoor_props.to_state_id(block),
-            BlockFlags::NOTIFY_LISTENERS,
-        )
-        .await;
+    world.set_block_state(
+        block_pos,
+        trapdoor_props.to_state_id(block),
+        BlockFlags::NOTIFY_LISTENERS,
+    );
 }
 
 fn can_open_trapdoor(block: &Block) -> bool {
@@ -69,23 +65,22 @@ fn get_sound(block: &Block, open: bool) -> Sound {
 #[pumpkin_block_from_tag("minecraft:trapdoors")]
 pub struct TrapDoorBlock;
 
-#[async_trait]
 impl BlockBehaviour for TrapDoorBlock {
-    async fn normal_use(&self, args: NormalUseArgs<'_>) -> BlockActionResult {
+    fn normal_use(&self, args: NormalUseArgs<'_>) -> BlockActionResult {
         if !can_open_trapdoor(args.block) {
             return BlockActionResult::Pass;
         }
 
-        toggle_trapdoor(args.player, args.world, args.position).await;
+        toggle_trapdoor(args.player, args.world, args.position);
 
         BlockActionResult::Success
     }
 
-    async fn on_place(&self, args: OnPlaceArgs<'_>) -> BlockStateId {
+    fn on_place(&self, args: OnPlaceArgs<'_>) -> BlockStateId {
         let mut trapdoor_props = TrapDoorProperties::default(args.block);
         trapdoor_props.waterlogged = args.replacing.water_source();
 
-        let powered = block_receives_redstone_power(args.world, args.position).await;
+        let powered = block_receives_redstone_power(args.world, args.position);
         let direction = args
             .player
             .living_entity
@@ -98,7 +93,7 @@ impl BlockBehaviour for TrapDoorBlock {
             BlockDirection::Up => BlockHalf::Top,
             BlockDirection::Down => BlockHalf::Bottom,
             _ => match args.use_item_on.cursor_pos.y {
-                0.0...0.5 => BlockHalf::Bottom,
+                0.0..0.5 => BlockHalf::Bottom,
                 _ => BlockHalf::Top,
             },
         };
@@ -108,32 +103,28 @@ impl BlockBehaviour for TrapDoorBlock {
         trapdoor_props.to_state_id(args.block)
     }
 
-    async fn on_neighbor_update(&self, args: OnNeighborUpdateArgs<'_>) {
-        let block_state = args.world.get_block_state(args.position).await;
+    fn on_neighbor_update(&self, args: OnNeighborUpdateArgs<'_>) {
+        let block_state = args.world.get_block_state(args.position);
         let mut trapdoor_props = TrapDoorProperties::from_state_id(block_state.id, args.block);
-        let powered = block_receives_redstone_power(args.world, args.position).await;
+        let powered = block_receives_redstone_power(args.world, args.position);
         if powered != trapdoor_props.powered {
             trapdoor_props.powered = !trapdoor_props.powered;
 
             if powered != trapdoor_props.open {
                 trapdoor_props.open = trapdoor_props.powered;
 
-                args.world
-                    .play_block_sound(
-                        get_sound(args.block, powered),
-                        SoundCategory::Blocks,
-                        *args.position,
-                    )
-                    .await;
+                args.world.play_block_sound(
+                    get_sound(args.block, powered),
+                    SoundCategory::Blocks,
+                    *args.position,
+                );
             }
         }
 
-        args.world
-            .set_block_state(
-                args.position,
-                trapdoor_props.to_state_id(args.block),
-                BlockFlags::NOTIFY_LISTENERS,
-            )
-            .await;
+        args.world.set_block_state(
+            args.position,
+            trapdoor_props.to_state_id(args.block),
+            BlockFlags::NOTIFY_LISTENERS,
+        );
     }
 }

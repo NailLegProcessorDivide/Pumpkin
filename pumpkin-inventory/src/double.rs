@@ -1,11 +1,10 @@
 use std::{any::Any, sync::Arc};
 
-use async_trait::async_trait;
+use parking_lot::Mutex;
 use pumpkin_world::{
     inventory::{Clearable, Inventory},
     item::ItemStack,
 };
-use tokio::sync::Mutex;
 
 #[derive(Debug)]
 pub struct DoubleInventory {
@@ -19,39 +18,37 @@ impl DoubleInventory {
     }
 }
 
-#[async_trait]
 impl Inventory for DoubleInventory {
     fn size(&self) -> usize {
         self.first.size() + self.second.size()
     }
 
-    async fn is_empty(&self) -> bool {
-        self.first.is_empty().await && self.second.is_empty().await
+    fn is_empty(&self) -> bool {
+        self.first.is_empty() && self.second.is_empty()
     }
 
-    async fn get_stack(&self, slot: usize) -> Arc<Mutex<ItemStack>> {
+    fn get_stack(&self, slot: usize) -> Arc<Mutex<ItemStack>> {
         if slot >= self.first.size() {
-            self.second.get_stack(slot - self.first.size()).await
+            self.second.get_stack(slot - self.first.size())
         } else {
-            self.first.get_stack(slot).await
+            self.first.get_stack(slot)
         }
     }
 
-    async fn remove_stack(&self, slot: usize) -> ItemStack {
+    fn remove_stack(&self, slot: usize) -> ItemStack {
         if slot >= self.first.size() {
-            self.second.remove_stack(slot - self.first.size()).await
+            self.second.remove_stack(slot - self.first.size())
         } else {
-            self.first.remove_stack(slot).await
+            self.first.remove_stack(slot)
         }
     }
 
-    async fn remove_stack_specific(&self, slot: usize, amount: u8) -> ItemStack {
+    fn remove_stack_specific(&self, slot: usize, amount: u8) -> ItemStack {
         if slot >= self.first.size() {
             self.second
                 .remove_stack_specific(slot - self.first.size(), amount)
-                .await
         } else {
-            self.first.remove_stack_specific(slot, amount).await
+            self.first.remove_stack_specific(slot, amount)
         }
     }
 
@@ -59,11 +56,11 @@ impl Inventory for DoubleInventory {
         self.first.get_max_count_per_stack()
     }
 
-    async fn set_stack(&self, slot: usize, stack: ItemStack) {
+    fn set_stack(&self, slot: usize, stack: ItemStack) {
         if slot >= self.first.size() {
-            self.second.set_stack(slot - self.first.size(), stack).await
+            self.second.set_stack(slot - self.first.size(), stack)
         } else {
-            self.first.set_stack(slot, stack).await
+            self.first.set_stack(slot, stack)
         }
     }
 
@@ -96,10 +93,9 @@ impl Inventory for DoubleInventory {
     }
 }
 
-#[async_trait]
 impl Clearable for DoubleInventory {
-    async fn clear(&self) {
-        self.first.clear().await;
-        self.second.clear().await;
+    fn clear(&self) {
+        self.first.clear();
+        self.second.clear();
     }
 }

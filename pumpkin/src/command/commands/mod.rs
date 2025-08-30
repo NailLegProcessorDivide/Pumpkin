@@ -59,10 +59,10 @@ mod worldborder;
 mod profile;
 
 #[must_use]
-pub async fn default_dispatcher() -> CommandDispatcher {
+pub fn default_dispatcher() -> CommandDispatcher {
     let mut dispatcher = CommandDispatcher::default();
 
-    register_permissions().await;
+    register_permissions();
 
     // Zero
     dispatcher.register(pumpkin::init_command_tree(), "pumpkin:command.pumpkin");
@@ -146,8 +146,8 @@ pub async fn default_dispatcher() -> CommandDispatcher {
     dispatcher
 }
 
-async fn register_permissions() {
-    let mut registry = PERMISSION_REGISTRY.write().await;
+fn register_permissions() {
+    let mut registry = PERMISSION_REGISTRY.write();
 
     // Register level 0 permissions (allowed by default)
     register_level_0_permissions(&mut registry);

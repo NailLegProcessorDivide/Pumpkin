@@ -1,4 +1,4 @@
-use async_trait::async_trait;
+
 use pumpkin_protocol::java::client::play::{ArgumentType, CommandSuggestion, SuggestionProviders};
 
 use crate::command::CommandSender;
@@ -22,9 +22,9 @@ impl GetClientSideArgParser for RotationArgumentConsumer {
     }
 }
 
-#[async_trait]
+
 impl ArgumentConsumer for RotationArgumentConsumer {
-    async fn consume<'a>(
+    fn consume<'a>(
         &'a self,
         _src: &CommandSender,
         _server: &'a Server,
@@ -48,7 +48,7 @@ impl ArgumentConsumer for RotationArgumentConsumer {
         Some(Arg::Rotation(yaw, pitch))
     }
 
-    async fn suggest<'a>(
+    fn suggest<'a>(
         &'a self,
         _sender: &CommandSender,
         _server: &'a Server,

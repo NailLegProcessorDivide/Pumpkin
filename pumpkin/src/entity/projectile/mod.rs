@@ -4,7 +4,7 @@ use std::{
 };
 
 use super::{Entity, EntityBase, NBTStorage, living::LivingEntity};
-use async_trait::async_trait;
+
 use pumpkin_util::math::vector3::Vector3;
 
 pub struct ThrownItemEntity {
@@ -78,7 +78,7 @@ impl ThrownItemEntity {
 
 impl NBTStorage for ThrownItemEntity {}
 
-#[async_trait]
+
 impl EntityBase for ThrownItemEntity {
     fn get_entity(&self) -> &Entity {
         &self.entity

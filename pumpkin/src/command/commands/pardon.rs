@@ -8,7 +8,7 @@ use crate::{
     data::{SaveJSONConfiguration, banned_player_data::BANNED_PLAYER_LIST},
 };
 use CommandError::InvalidConsumption;
-use async_trait::async_trait;
+
 use pumpkin_util::text::TextComponent;
 
 const NAMES: [&str; 1] = ["pardon"];
@@ -18,9 +18,9 @@ const ARG_TARGET: &str = "player";
 
 struct Executor;
 
-#[async_trait]
+
 impl CommandExecutor for Executor {
-    async fn execute<'a>(
+    fn execute<'a>(
         &self,
         sender: &mut CommandSender,
         _server: &crate::server::Server,
@@ -31,7 +31,7 @@ impl CommandExecutor for Executor {
         };
         let target = (*target).to_string();
 
-        let mut lock = BANNED_PLAYER_LIST.write().await;
+        let mut lock = BANNED_PLAYER_LIST.write();
 
         if let Some(idx) = lock
             .banned_players
@@ -40,20 +40,16 @@ impl CommandExecutor for Executor {
         {
             lock.banned_players.remove(idx);
         } else {
-            sender
-                .send_message(TextComponent::translate("commands.pardon.failed", []))
-                .await;
+            sender.send_message(TextComponent::translate("commands.pardon.failed", []));
             return Ok(());
         }
 
         lock.save();
 
-        sender
-            .send_message(TextComponent::translate(
-                "commands.pardon.success",
-                [TextComponent::text(target)],
-            ))
-            .await;
+        sender.send_message(TextComponent::translate(
+            "commands.pardon.success",
+            [TextComponent::text(target)],
+        ));
         Ok(())
     }
 }

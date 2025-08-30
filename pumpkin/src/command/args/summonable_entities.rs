@@ -1,4 +1,4 @@
-use async_trait::async_trait;
+
 use pumpkin_data::entity::EntityType;
 use pumpkin_protocol::java::client::play::{ArgumentType, CommandSuggestion, SuggestionProviders};
 use pumpkin_util::text::TextComponent;
@@ -25,9 +25,9 @@ impl GetClientSideArgParser for SummonableEntitiesArgumentConsumer {
     }
 }
 
-#[async_trait]
+
 impl ArgumentConsumer for SummonableEntitiesArgumentConsumer {
-    async fn consume<'a>(
+    fn consume<'a>(
         &'a self,
         _sender: &CommandSender,
         _server: &'a Server,
@@ -37,7 +37,7 @@ impl ArgumentConsumer for SummonableEntitiesArgumentConsumer {
         Some(Arg::Block(s))
     }
 
-    async fn suggest<'a>(
+    fn suggest<'a>(
         &'a self,
         _sender: &CommandSender,
         _server: &'a Server,

@@ -1,4 +1,4 @@
-use async_trait::async_trait;
+
 use pumpkin_protocol::java::client::play::{ArgumentType, CommandSuggestion, SuggestionProviders};
 use pumpkin_util::math::vector3::Vector3;
 
@@ -24,9 +24,9 @@ impl GetClientSideArgParser for Position3DArgumentConsumer {
     }
 }
 
-#[async_trait]
+
 impl ArgumentConsumer for Position3DArgumentConsumer {
-    async fn consume<'a>(
+    fn consume<'a>(
         &'a self,
         src: &CommandSender,
         _server: &'a Server,
@@ -39,7 +39,7 @@ impl ArgumentConsumer for Position3DArgumentConsumer {
         Some(Arg::Pos3D(vec3))
     }
 
-    async fn suggest<'a>(
+    fn suggest<'a>(
         &'a self,
         _sender: &CommandSender,
         _server: &'a Server,

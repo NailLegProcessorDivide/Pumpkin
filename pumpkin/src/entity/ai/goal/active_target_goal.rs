@@ -6,11 +6,11 @@ use crate::entity::living::LivingEntity;
 use crate::entity::mob::Mob;
 use crate::entity::{EntityBase, mob::MobEntity, player::Player};
 use crate::world::World;
-use async_trait::async_trait;
+
 use pumpkin_data::entity::EntityType;
 use rand::Rng;
 use std::sync::Arc;
-use tokio::sync::Mutex;
+use parking_lot::Mutex;
 
 const DEFAULT_RECIPROCAL_CHANCE: i32 = 10;
 
@@ -24,7 +24,7 @@ pub struct ActiveTargetGoal {
 }
 
 impl ActiveTargetGoal {
-    pub async fn new<F, Fut>(
+    pub fn new<F, Fut>(
         mob: &MobEntity,
         target_type: &'static EntityType,
         reciprocal_chance: i32,
@@ -37,7 +37,7 @@ impl ActiveTargetGoal {
         Fut: Future<Output = bool> + Send + 'static,
     {
         let track_target_goal = TrackTargetGoal::new(check_visibility, check_can_navigate);
-        track_target_goal.set_controls(&[Control::Target]).await;
+        track_target_goal.set_controls(&[Control::Target]);
         let mut target_predicate = TargetPredicate::attackable();
         target_predicate.base_max_distance = TrackTargetGoal::get_follow_range(mob);
         if let Some(predicate) = predicate {
@@ -53,13 +53,13 @@ impl ActiveTargetGoal {
     }
 
     #[must_use]
-    pub async fn with_default(
+    pub fn with_default(
         mob: &MobEntity,
         target_type: &'static EntityType,
         check_visibility: bool,
     ) -> Self {
         let track_target_goal = TrackTargetGoal::with_default(check_visibility);
-        track_target_goal.set_controls(&[Control::Target]).await;
+        track_target_goal.set_controls(&[Control::Target]);
         let mut target_predicate = TargetPredicate::attackable();
         target_predicate.base_max_distance = TrackTargetGoal::get_follow_range(mob);
         Self {
@@ -71,8 +71,8 @@ impl ActiveTargetGoal {
         }
     }
 
-    async fn find_closest_target(&self, mob: &MobEntity) {
-        let mut target = self.target.lock().await;
+    fn find_closest_target(&self, mob: &MobEntity) {
+        let mut target = self.target.lock();
         let world = &mob.living_entity.entity.world;
         if self.target_type == &EntityType::PLAYER {
             *target = world
@@ -80,49 +80,46 @@ impl ActiveTargetGoal {
                     mob.living_entity.entity.pos.load(),
                     TrackTargetGoal::get_follow_range(mob),
                 )
-                .await
                 .map(|p: Arc<Player>| p as Arc<dyn EntityBase>);
         } else {
-            *target = world
-                .get_closest_entity(
-                    mob.living_entity.entity.pos.load(),
-                    TrackTargetGoal::get_follow_range(mob),
-                    Some(&[self.target_type]),
-                )
-                .await;
+            *target = world.get_closest_entity(
+                mob.living_entity.entity.pos.load(),
+                TrackTargetGoal::get_follow_range(mob),
+                Some(&[self.target_type]),
+            );
         }
     }
 }
 
-#[async_trait]
+
 impl Goal for ActiveTargetGoal {
-    async fn can_start(&self, mob: &dyn Mob) -> bool {
+    fn can_start(&self, mob: &dyn Mob) -> bool {
         if self.reciprocal_chance > 0
             && mob.get_random().random_range(0..self.reciprocal_chance) != 0
         {
             return false;
         }
-        self.find_closest_target(mob.get_mob_entity()).await;
-        self.target.lock().await.is_some()
+        self.find_closest_target(mob.get_mob_entity());
+        self.target.lock().is_some()
     }
-    async fn should_continue(&self, mob: &dyn Mob) -> bool {
-        self.track_target_goal.should_continue(mob).await
+    fn should_continue(&self, mob: &dyn Mob) -> bool {
+        self.track_target_goal.should_continue(mob)
     }
 
-    async fn start(&self, mob: &dyn Mob) {
+    fn start(&self, mob: &dyn Mob) {
         let mob_entity = mob.get_mob_entity();
-        let mut mob_target = mob_entity.target.lock().await;
-        let target = self.target.lock().await.clone();
+        let mut mob_target = mob_entity.target.lock();
+        let target = self.target.lock().clone();
         (*mob_target).clone_from(&target);
 
-        self.track_target_goal.start(mob).await;
+        self.track_target_goal.start(mob);
     }
 
-    async fn stop(&self, mob: &dyn Mob) {
-        self.track_target_goal.stop(mob).await;
+    fn stop(&self, mob: &dyn Mob) {
+        self.track_target_goal.stop(mob);
     }
 
-    async fn tick(&self, _mob: &dyn Mob) {}
+    fn tick(&self, _mob: &dyn Mob) {}
 
     fn get_goal_control(&self) -> &GoalControl {
         self.track_target_goal.get_goal_control()

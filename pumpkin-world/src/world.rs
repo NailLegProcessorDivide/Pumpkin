@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use crate::block::entities::BlockEntity;
 use crate::{BlockStateId, inventory::Inventory};
-use async_trait::async_trait;
 use bitflags::bitflags;
 use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_data::{Block, BlockDirection, BlockState};
@@ -37,35 +36,30 @@ impl std::fmt::Display for GetBlockError {
     }
 }
 
-#[async_trait]
 pub trait SimpleWorld: BlockAccessor + Send + Sync {
-    async fn set_block_state(
+    fn set_block_state(
         self: Arc<Self>,
         position: &BlockPos,
         block_state_id: BlockStateId,
         flags: BlockFlags,
     ) -> BlockStateId;
 
-    async fn update_neighbor(
+    fn update_neighbor(
         self: Arc<Self>,
         neighbor_block_pos: &BlockPos,
         source_block: &pumpkin_data::Block,
     );
 
-    async fn update_neighbors(
-        self: Arc<Self>,
-        block_pos: &BlockPos,
-        except: Option<BlockDirection>,
-    );
+    fn update_neighbors(self: Arc<Self>, block_pos: &BlockPos, except: Option<BlockDirection>);
 
-    async fn add_synced_block_event(&self, pos: BlockPos, r#type: u8, data: u8);
+    fn add_synced_block_event(&self, pos: BlockPos, r#type: u8, data: u8);
 
-    async fn remove_block_entity(&self, block_pos: &BlockPos);
-    async fn get_block_entity(&self, block_pos: &BlockPos) -> Option<Arc<dyn BlockEntity>>;
-    async fn get_world_age(&self) -> i64;
+    fn remove_block_entity(&self, block_pos: &BlockPos);
+    fn get_block_entity(&self, block_pos: &BlockPos) -> Option<Arc<dyn BlockEntity>>;
+    fn get_world_age(&self) -> i64;
 
-    async fn play_sound(&self, sound: Sound, category: SoundCategory, position: &Vector3<f64>);
-    async fn play_sound_fine(
+    fn play_sound(&self, sound: Sound, category: SoundCategory, position: &Vector3<f64>);
+    fn play_sound_fine(
         &self,
         sound: Sound,
         category: SoundCategory,
@@ -75,14 +69,9 @@ pub trait SimpleWorld: BlockAccessor + Send + Sync {
     );
 
     /* ItemScatterer */
-    async fn scatter_inventory(
-        self: Arc<Self>,
-        position: &BlockPos,
-        inventory: &Arc<dyn Inventory>,
-    );
+    fn scatter_inventory(self: Arc<Self>, position: &BlockPos, inventory: &Arc<dyn Inventory>);
 }
 
-#[async_trait]
 pub trait BlockRegistryExt: Send + Sync {
     fn can_place_at(
         &self,
@@ -93,14 +82,10 @@ pub trait BlockRegistryExt: Send + Sync {
     ) -> bool;
 }
 
-#[async_trait]
-pub trait BlockAccessor: Send + Sync {
-    async fn get_block(&self, position: &BlockPos) -> &'static Block;
+pub trait BlockAccessor {
+    fn get_block(&self, position: &BlockPos) -> &'static Block;
 
-    async fn get_block_state(&self, position: &BlockPos) -> &'static BlockState;
+    fn get_block_state(&self, position: &BlockPos) -> &'static BlockState;
 
-    async fn get_block_and_state(
-        &self,
-        position: &BlockPos,
-    ) -> (&'static Block, &'static BlockState);
+    fn get_block_and_state(&self, position: &BlockPos) -> (&'static Block, &'static BlockState);
 }

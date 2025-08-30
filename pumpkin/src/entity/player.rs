@@ -7,14 +7,13 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicI64, AtomicU8, AtomicU32, Ordering};
 use std::time::{Duration, Instant};
 
-use async_trait::async_trait;
 use crossbeam::atomic::AtomicCell;
 use log::warn;
+use parking_lot::{Mutex, RwLock};
 use pumpkin_protocol::bedrock::client::level_chunk::CLevelChunk;
 use pumpkin_protocol::bedrock::client::set_time::CSetTime;
 use pumpkin_world::chunk::{ChunkData, ChunkEntityData};
 use pumpkin_world::inventory::Inventory;
-use tokio::sync::{Mutex, RwLock};
 use tokio::task::JoinHandle;
 use uuid::Uuid;
 
@@ -74,6 +73,7 @@ use crate::block::blocks::bed::BedBlock;
 use crate::command::client_suggestions;
 use crate::command::dispatcher::CommandDispatcher;
 use crate::data::op_data::OPERATOR_CONFIG;
+use crate::net::net_thread::{ServerClientEvent, ServerHandle};
 use crate::net::{ClientPlatform, GameProfile};
 use crate::net::{DisconnectReason, PlayerConfig};
 use crate::plugin::player::player_change_world::PlayerChangeWorldEvent;
@@ -200,7 +200,8 @@ pub struct Player {
     /// The player's game profile information, including their username and UUID.
     pub gameprofile: GameProfile,
     /// The client connection associated with the player.
-    pub client: Arc<ClientPlatform>,
+    pub client: ClientPlatform,
+    pub server_conn: ServerHandle,
     /// The player's inventory.
     pub inventory: Arc<PlayerInventory>,
     /// The player's configuration settings. Changes when the player changes their settings.
@@ -277,18 +278,18 @@ pub struct Player {
 }
 
 impl Player {
-    pub async fn new(
-        client: Arc<ClientPlatform>,
+    pub fn new(
+        client: ClientPlatform,
         gameprofile: GameProfile,
         config: PlayerConfig,
         world: Arc<World>,
         gamemode: GameMode,
+        server_conn: ServerHandle,
     ) -> Self {
         struct ScreenListener;
 
-        #[async_trait]
         impl ScreenHandlerListener for ScreenListener {
-            async fn on_slot_update(
+            fn on_slot_update(
                 &self,
                 _screen_handler: &ScreenHandlerBehaviour,
                 _slot: u8,
@@ -313,15 +314,15 @@ impl Player {
             living_entity.equipment_slots.clone(),
         ));
 
-        let player_screen_handler = Arc::new(Mutex::new(
-            PlayerScreenHandler::new(&inventory, None, 0).await,
-        ));
+        let player_screen_handler =
+            Arc::new(Mutex::new(PlayerScreenHandler::new(&inventory, None, 0)));
 
         Self {
             living_entity,
             config: RwLock::new(config),
             gameprofile,
             client,
+            server_conn,
             awaiting_teleport: Mutex::new(None),
             // TODO: Load this from previous instance
             hunger_manager: HungerManager::default(),
@@ -356,7 +357,7 @@ impl Player {
             client_loaded_timeout: AtomicU32::new(60),
             // Minecraft has no way to change the default permission level of new players.
             // Minecraft's default permission level is 0.
-            permission_lvl: OPERATOR_CONFIG.read().await.get_entry(&player_uuid).map_or(
+            permission_lvl: OPERATOR_CONFIG.read().get_entry(&player_uuid).map_or(
                 AtomicCell::new(advanced_config().commands.default_op_level),
                 |op| AtomicCell::new(op.level),
             ),
@@ -400,9 +401,9 @@ impl Player {
     }
 
     /// Removes the [`Player`] out of the current [`World`].
-    pub async fn remove(self: &Arc<Self>) {
+    pub fn remove(self: &Arc<Self>) {
         let world = self.world();
-        world.remove_player(self, true).await;
+        world.remove_player(self, true);
 
         let cylindrical = self.watched_section.load();
 
@@ -419,10 +420,10 @@ impl Player {
         let level = &world.level;
 
         // Decrement the value of watched chunks
-        let chunks_to_clean = level.mark_chunks_as_not_watched(&radial_chunks).await;
+        let chunks_to_clean = level.mark_chunks_as_not_watched(&radial_chunks);
         // Remove chunks with no watchers from the cache
-        level.clean_chunks(&chunks_to_clean).await;
-        level.clean_entity_chunks(&chunks_to_clean).await;
+        level.clean_chunks(&chunks_to_clean);
+        level.clean_entity_chunks(&chunks_to_clean);
         // Remove left over entries from all possiblily loaded chunks
         level.clean_memory();
 
@@ -433,12 +434,12 @@ impl Player {
             level.loaded_chunk_count(),
         );
 
-        level.clean_up_log().await;
+        level.clean_up_log();
 
         //self.world().level.list_cached();
     }
 
-    pub async fn attack(&self, victim: Arc<dyn EntityBase>) {
+    pub fn attack(&self, victim: Arc<dyn EntityBase>) {
         let world = self.world();
         let victim_entity = victim.get_entity();
         let attacker_entity = &self.living_entity.entity;
@@ -458,7 +459,6 @@ impl Player {
         // TODO: this should be cached in memory, we shouldn't just use default here either
         if let Some(modifiers) = item_stack
             .lock()
-            .await
             .get_data_component::<AttributeModifiersImpl>()
         {
             for item_mod in modifiers.attribute_modifiers.iter() {
@@ -487,53 +487,47 @@ impl Player {
 
         let pos = victim_entity.pos.load();
 
-        let attack_type = AttackType::new(self, attack_cooldown_progress as f32).await;
+        let attack_type = AttackType::new(self, attack_cooldown_progress as f32);
 
         if matches!(attack_type, AttackType::Critical) {
             damage *= 1.5;
         }
 
-        if !victim
-            .damage_with_context(
-                victim.clone(),
-                damage as f32,
-                DamageType::PLAYER_ATTACK,
-                None,
-                Some(&self.living_entity.entity),
-                Some(&self.living_entity.entity),
-            )
-            .await
-        {
-            world
-                .play_sound(
-                    Sound::EntityPlayerAttackNodamage,
-                    SoundCategory::Players,
-                    &self.living_entity.entity.pos.load(),
-                )
-                .await;
+        if !victim.damage_with_context(
+            victim.clone(),
+            damage as f32,
+            DamageType::PLAYER_ATTACK,
+            None,
+            Some(&self.living_entity.entity),
+            Some(&self.living_entity.entity),
+        ) {
+            world.play_sound(
+                Sound::EntityPlayerAttackNodamage,
+                SoundCategory::Players,
+                &self.living_entity.entity.pos.load(),
+            );
             return;
         }
 
         if victim.get_living_entity().is_some() {
             let mut knockback_strength = 1.0;
-            player_attack_sound(&pos, world, attack_type).await;
+            player_attack_sound(&pos, world, attack_type);
             match attack_type {
                 AttackType::Knockback => knockback_strength += 1.0,
                 AttackType::Sweeping => {
-                    combat::spawn_sweep_particle(attacker_entity, world, &pos).await;
+                    combat::spawn_sweep_particle(attacker_entity, world, &pos);
                 }
                 _ => {}
             }
             if config.knockback {
-                combat::handle_knockback(attacker_entity, world, victim_entity, knockback_strength)
-                    .await;
+                combat::handle_knockback(attacker_entity, world, victim_entity, knockback_strength);
             }
         }
 
         if config.swing {}
     }
 
-    pub async fn set_respawn_point(
+    pub fn set_respawn_point(
         &self,
         dimension: VanillaDimensionType,
         block_pos: BlockPos,
@@ -554,15 +548,14 @@ impl Player {
         }));
 
         self.client
-            .send_packet_now(&CPlayerSpawnPosition::new(block_pos, yaw))
-            .await;
+            .send_packet_now(&CPlayerSpawnPosition::new(block_pos, yaw));
         true
     }
 
-    pub async fn get_respawn_point(&self) -> Option<(Vector3<f64>, f32)> {
+    pub fn get_respawn_point(&self) -> Option<(Vector3<f64>, f32)> {
         let respawn_point = self.respawn_point.load()?;
 
-        let block = self.world().get_block(&respawn_point.position).await;
+        let block = self.world().get_block(&respawn_point.position);
 
         if respawn_point.dimension == VanillaDimensionType::Overworld
             && block.is_tagged_with_by_tag(&tag::Block::MINECRAFT_BEDS)
@@ -577,38 +570,35 @@ impl Player {
             Some((respawn_point.position.to_f64(), respawn_point.yaw))
         } else {
             self.client
-                .send_packet_now(&CGameEvent::new(GameEvent::NoRespawnBlockAvailable, 0.0))
-                .await;
+                .send_packet_now(&CGameEvent::new(GameEvent::NoRespawnBlockAvailable, 0.0));
 
             None
         }
     }
 
-    pub async fn sleep(&self, bed_head_pos: BlockPos) {
+    pub fn sleep(&self, bed_head_pos: BlockPos) {
         // TODO: Stop riding
 
-        self.get_entity().set_pose(EntityPose::Sleeping).await;
+        self.get_entity().set_pose(EntityPose::Sleeping);
         self.living_entity
             .entity
             .set_pos(bed_head_pos.to_f64().add_raw(0.5, 0.6875, 0.5));
-        self.get_entity()
-            .send_meta_data(&[Metadata::new(
-                SLEEPING_POS_ID,
-                MetaDataType::OptionalBlockPos,
-                Some(bed_head_pos),
-            )])
-            .await;
-        self.get_entity().set_velocity(Vector3::default()).await;
+        self.get_entity().send_meta_data(&[Metadata::new(
+            SLEEPING_POS_ID,
+            MetaDataType::OptionalBlockPos,
+            Some(bed_head_pos),
+        )]);
+        self.get_entity().set_velocity(Vector3::default());
 
         self.sleeping_since.store(Some(0));
     }
 
-    pub async fn get_off_ground_speed(&self) -> f64 {
+    pub fn get_off_ground_speed(&self) -> f64 {
         let sprinting = self.get_entity().sprinting.load(Ordering::Relaxed);
 
-        if !self.get_entity().has_vehicle().await {
+        if !self.get_entity().has_vehicle() {
             let fly_speed = {
-                let abilities = self.abilities.lock().await;
+                let abilities = self.abilities.lock();
 
                 abilities.flying.then_some(f64::from(abilities.fly_speed))
             };
@@ -621,54 +611,46 @@ impl Player {
         if sprinting { 0.025_999_999 } else { 0.02 }
     }
 
-    pub async fn is_flying(&self) -> bool {
-        let abilities = self.abilities.lock().await;
+    pub fn is_flying(&self) -> bool {
+        let abilities = self.abilities.lock();
         abilities.flying
     }
 
-    pub async fn wake_up(&self) {
+    pub fn wake_up(&self) {
         let world = self.world();
         let respawn_point = self
             .respawn_point
             .load()
             .expect("Player waking up should have it's respawn point set on the bed.");
 
-        let (bed, bed_state) = world.get_block_and_state_id(&respawn_point.position).await;
-        BedBlock::set_occupied(false, world, bed, &respawn_point.position, bed_state).await;
+        let (bed, bed_state) = world.get_block_and_state_id(&respawn_point.position);
+        BedBlock::set_occupied(false, world, bed, &respawn_point.position, bed_state);
 
-        self.living_entity
-            .entity
-            .set_pose(EntityPose::Standing)
-            .await;
+        self.living_entity.entity.set_pose(EntityPose::Standing);
         self.living_entity.entity.set_pos(self.position());
-        self.living_entity
-            .entity
-            .send_meta_data(&[Metadata::new(
-                SLEEPING_POS_ID,
-                MetaDataType::OptionalBlockPos,
-                None::<BlockPos>,
-            )])
-            .await;
+        self.living_entity.entity.send_meta_data(&[Metadata::new(
+            SLEEPING_POS_ID,
+            MetaDataType::OptionalBlockPos,
+            None::<BlockPos>,
+        )]);
 
-        world
-            .broadcast_packet_all(&CEntityAnimation::new(
-                self.entity_id().into(),
-                Animation::LeaveBed,
-            ))
-            .await;
+        world.broadcast_packet_all(&CEntityAnimation::new(
+            self.entity_id().into(),
+            Animation::LeaveBed,
+        ));
 
         self.sleeping_since.store(None);
     }
 
-    pub async fn show_title(&self, text: &TextComponent, mode: &TitleMode) {
+    pub fn show_title(&self, text: &TextComponent, mode: &TitleMode) {
         match mode {
-            TitleMode::Title => self.client.enqueue_packet(&CTitleText::new(text)).await,
-            TitleMode::SubTitle => self.client.enqueue_packet(&CSubtitle::new(text)).await,
-            TitleMode::ActionBar => self.client.enqueue_packet(&CActionBar::new(text)).await,
+            TitleMode::Title => self.client.enqueue_packet(&CTitleText::new(text)),
+            TitleMode::SubTitle => self.client.enqueue_packet(&CSubtitle::new(text)),
+            TitleMode::ActionBar => self.client.enqueue_packet(&CActionBar::new(text)),
         }
     }
 
-    pub async fn spawn_particle(
+    pub fn spawn_particle(
         &self,
         position: Vector3<f64>,
         offset: Vector3<f32>,
@@ -676,21 +658,19 @@ impl Player {
         particle_count: i32,
         particle: Particle,
     ) {
-        self.client
-            .enqueue_packet(&CParticle::new(
-                false,
-                false,
-                position,
-                offset,
-                max_speed,
-                particle_count,
-                VarInt(particle as i32),
-                &[],
-            ))
-            .await;
+        self.client.enqueue_packet(&CParticle::new(
+            false,
+            false,
+            position,
+            offset,
+            max_speed,
+            particle_count,
+            VarInt(particle as i32),
+            &[],
+        ));
     }
 
-    pub async fn play_sound(
+    pub fn play_sound(
         &self,
         sound_id: u16,
         category: SoundCategory,
@@ -699,16 +679,14 @@ impl Player {
         pitch: f32,
         seed: f64,
     ) {
-        self.client
-            .enqueue_packet(&CSoundEffect::new(
-                IdOr::Id(sound_id),
-                category,
-                position,
-                volume,
-                pitch,
-                seed,
-            ))
-            .await;
+        self.client.enqueue_packet(&CSoundEffect::new(
+            IdOr::Id(sound_id),
+            category,
+            position,
+            volume,
+            pitch,
+            seed,
+        ));
     }
 
     /// Stops a sound playing on the client.
@@ -717,48 +695,38 @@ impl Player {
     ///
     /// * `sound_id`: An optional [`ResourceLocation`] specifying the sound to stop. If [`None`], all sounds in the specified category (if any) will be stopped.
     /// * `category`: An optional [`SoundCategory`] specifying the sound category to stop. If [`None`], all sounds with the specified resource location (if any) will be stopped.
-    pub async fn stop_sound(
-        &self,
-        sound_id: Option<ResourceLocation>,
-        category: Option<SoundCategory>,
-    ) {
+    pub fn stop_sound(&self, sound_id: Option<ResourceLocation>, category: Option<SoundCategory>) {
         self.client
-            .enqueue_packet(&CStopSound::new(sound_id, category))
-            .await;
+            .enqueue_packet(&CStopSound::new(sound_id, category));
     }
 
     // TODO Abstract the chunk sending
     #[allow(clippy::too_many_lines)]
-    pub async fn tick(self: &Arc<Self>, server: &Server) {
+    pub fn tick(self: &Arc<Self>, server: &Server) {
         self.current_screen_handler
             .lock()
-            .await
             .lock()
-            .await
-            .send_content_updates()
-            .await;
+            .send_content_updates();
 
         // if self.client.closed.load(Ordering::Relaxed) {
         //     return;
         // }
 
         if self.packet_sequence.load(Ordering::Relaxed) > -1 {
-            self.client
-                .enqueue_packet(&CAcknowledgeBlockChange::new(
-                    self.packet_sequence.swap(-1, Ordering::Relaxed).into(),
-                ))
-                .await;
+            self.client.enqueue_packet(&CAcknowledgeBlockChange::new(
+                self.packet_sequence.swap(-1, Ordering::Relaxed).into(),
+            ));
         }
         {
-            let mut xp = self.experience_pick_up_delay.lock().await;
+            let mut xp = self.experience_pick_up_delay.lock();
             if *xp > 0 {
                 *xp -= 1;
             }
         }
 
         let chunk_of_chunks = {
-            let mut chunk_manager = self.chunk_manager.lock().await;
-            if let ClientPlatform::Java(_) = self.client.as_ref() {
+            let mut chunk_manager = self.chunk_manager.lock();
+            if let ClientPlatform::Java = self.client {
                 // Java clients can only send a limited amount of chunks per tick.
                 // If we have sent too many chunks without receiving an ack, we stop sending chunks.
                 chunk_manager
@@ -771,30 +739,28 @@ impl Player {
 
         if let Some(chunk_of_chunks) = chunk_of_chunks {
             let chunk_count = chunk_of_chunks.len();
+            self.server_conn
+                .send(ServerClientEvent::SendChunks(chunk_of_chunks));
             match self.client.as_ref() {
                 ClientPlatform::Java(java_client) => {
-                    java_client.send_packet_now(&CChunkBatchStart).await;
+                    java_client.send_packet_now(&CChunkBatchStart);
                     for chunk in chunk_of_chunks {
-                        let chunk = chunk.read().await;
+                        let chunk = chunk.read();
                         // TODO: Can we check if we still need to send the chunk? Like if it's a fast moving
                         // player or something.
-                        java_client.send_packet_now(&CChunkData(&chunk)).await;
+                        java_client.send_packet_now(&CChunkData(&chunk));
                     }
-                    java_client
-                        .send_packet_now(&CChunkBatchEnd::new(chunk_count as u16))
-                        .await;
+                    java_client.send_packet_now(&CChunkBatchEnd::new(chunk_count as u16));
                 }
                 ClientPlatform::Bedrock(bedrock_client) => {
                     for chunk in chunk_of_chunks {
-                        let chunk = chunk.read().await;
+                        let chunk = chunk.read();
 
-                        bedrock_client
-                            .send_game_packet(&CLevelChunk {
-                                dimension: 0,
-                                cache_enabled: false,
-                                chunk: &chunk,
-                            })
-                            .await;
+                        bedrock_client.send_game_packet(&CLevelChunk {
+                            dimension: 0,
+                            cache_enabled: false,
+                            chunk: &chunk,
+                        });
                     }
                 }
             }
@@ -808,14 +774,12 @@ impl Player {
         }
 
         if self.mining.load(Ordering::Relaxed) {
-            let pos = self.mining_pos.lock().await;
+            let pos = self.mining_pos.lock();
             let world = self.world();
-            let state = world.get_block_state(&pos).await;
+            let state = world.get_block_state(&pos);
             // Is the block broken?
             if state.is_air() {
-                world
-                    .set_block_breaking(&self.living_entity.entity, *pos, -1)
-                    .await;
+                world.set_block_breaking(&self.living_entity.entity, *pos, -1);
                 self.current_block_destroy_stage
                     .store(-1, Ordering::Relaxed);
                 self.mining.store(false, Ordering::Relaxed);
@@ -825,19 +789,18 @@ impl Player {
                     world,
                     state,
                     self.start_mining_time.load(Ordering::Relaxed),
-                )
-                .await;
+                );
             }
         }
 
         self.last_attacked_ticks.fetch_add(1, Ordering::Relaxed);
 
-        self.living_entity.tick(self.clone(), server).await;
-        self.hunger_manager.tick(self).await;
+        self.living_entity.tick(self.clone(), server);
+        self.hunger_manager.tick(self);
 
         // experience handling
-        self.tick_experience().await;
-        self.tick_health().await;
+        self.tick_experience();
+        self.tick_health();
 
         // Timeout/keep alive handling
         self.tick_client_load_timeout();
@@ -845,7 +808,7 @@ impl Player {
         // TODO This should only be handled by the ClientPlatform
         let now = Instant::now();
         if now.duration_since(self.last_keep_alive_time.load()) >= Duration::from_secs(15) {
-            if matches!(self.client.as_ref(), ClientPlatform::Bedrock(_)) {
+            if matches!(self.client.as_ref(), ClientPlatform::Bedrock) {
                 return;
             }
             // We never got a response from the last keep alive we sent.
@@ -853,19 +816,18 @@ impl Player {
                 self.kick(
                     DisconnectReason::Timeout,
                     TextComponent::translate("disconnect.timeout", []),
-                )
-                .await;
+                );
                 return;
             }
             self.wait_for_keep_alive.store(true, Ordering::Relaxed);
             self.last_keep_alive_time.store(now);
             let id = now.elapsed().as_millis() as i64;
             self.keep_alive_id.store(id, Ordering::Relaxed);
-            self.client.enqueue_packet(&CKeepAlive::new(id)).await;
+            self.client.enqueue_packet(&CKeepAlive::new(id));
         }
     }
 
-    async fn continue_mining(
+    fn continue_mining(
         &self,
         location: BlockPos,
         world: &World,
@@ -873,36 +835,34 @@ impl Player {
         starting_time: i32,
     ) {
         let time = self.tick_counter.load(Ordering::Relaxed) - starting_time;
-        let speed = block::calc_block_breaking(self, state, Block::from_state_id(state.id)).await
+        let speed = block::calc_block_breaking(self, state, Block::from_state_id(state.id))
             * (time + 1) as f32;
         let progress = (speed * 10.0) as i32;
         if progress != self.current_block_destroy_stage.load(Ordering::Relaxed) {
-            world
-                .set_block_breaking(&self.living_entity.entity, location, progress)
-                .await;
+            world.set_block_breaking(&self.living_entity.entity, location, progress);
             self.current_block_destroy_stage
                 .store(progress, Ordering::Relaxed);
         }
     }
 
-    pub async fn jump(&self) {
+    pub fn jump(&self) {
         if self.living_entity.entity.sprinting.load(Ordering::Relaxed) {
-            self.add_exhaustion(0.2).await;
+            self.add_exhaustion(0.2);
         } else {
-            self.add_exhaustion(0.05).await;
+            self.add_exhaustion(0.05);
         }
     }
 
     #[expect(clippy::cast_precision_loss)]
-    pub async fn progress_motion(&self, delta_pos: Vector3<f64>) {
+    pub fn progress_motion(&self, delta_pos: Vector3<f64>) {
         // TODO: Swimming, gliding...
         if self.living_entity.entity.on_ground.load(Ordering::Relaxed) {
             let delta = (delta_pos.horizontal_length() * 100.0).round() as i32;
             if delta > 0 {
                 if self.living_entity.entity.sprinting.load(Ordering::Relaxed) {
-                    self.add_exhaustion(0.1 * delta as f32 * 0.01).await;
+                    self.add_exhaustion(0.1 * delta as f32 * 0.01);
                 } else {
-                    self.add_exhaustion(0.0 * delta as f32 * 0.01).await;
+                    self.add_exhaustion(0.0 * delta as f32 * 0.01);
                 }
             }
         }
@@ -961,9 +921,9 @@ impl Player {
     }
 
     /// Updates the current abilities the player has.
-    pub async fn send_abilities_update(&self) {
+    pub fn send_abilities_update(&self) {
         let mut b = 0i8;
-        let abilities = &self.abilities.lock().await;
+        let abilities = &self.abilities.lock();
 
         if abilities.invulnerable {
             b |= 1;
@@ -977,17 +937,15 @@ impl Player {
         if abilities.creative {
             b |= 8;
         }
-        self.client
-            .enqueue_packet(&CPlayerAbilities::new(
-                b,
-                abilities.fly_speed,
-                abilities.walk_speed,
-            ))
-            .await;
+        self.client.enqueue_packet(&CPlayerAbilities::new(
+            b,
+            abilities.fly_speed,
+            abilities.walk_speed,
+        ));
     }
 
     /// Updates the client of the player's current permission level.
-    pub async fn send_permission_lvl_update(&self) {
+    pub fn send_permission_lvl_update(&self) {
         let status = match self.permission_lvl.load() {
             PermissionLvl::Zero => EntityStatus::SetOpLevel0,
             PermissionLvl::One => EntityStatus::SetOpLevel1,
@@ -996,65 +954,57 @@ impl Player {
             PermissionLvl::Four => EntityStatus::SetOpLevel4,
         };
         self.world()
-            .send_entity_status(&self.living_entity.entity, status)
-            .await;
+            .send_entity_status(&self.living_entity.entity, status);
     }
 
     /// Sets the player's difficulty level.
-    pub async fn send_difficulty_update(&self) {
+    pub fn send_difficulty_update(&self) {
         let world = self.world();
-        let level_info = world.level_info.read().await;
-        self.client
-            .enqueue_packet(&CChangeDifficulty::new(
-                level_info.difficulty as u8,
-                level_info.difficulty_locked,
-            ))
-            .await;
+        let level_info = world.level_info.read();
+        self.client.enqueue_packet(&CChangeDifficulty::new(
+            level_info.difficulty as u8,
+            level_info.difficulty_locked,
+        ));
     }
 
     /// Sets the player's permission level and notifies the client.
-    pub async fn set_permission_lvl(
+    pub fn set_permission_lvl(
         self: &Arc<Self>,
         lvl: PermissionLvl,
         command_dispatcher: &CommandDispatcher,
     ) {
         self.permission_lvl.store(lvl);
-        self.send_permission_lvl_update().await;
-        client_suggestions::send_c_commands_packet(self, command_dispatcher).await;
+        self.send_permission_lvl_update();
+        client_suggestions::send_c_commands_packet(self, command_dispatcher);
     }
 
     /// Sends the world time to only this player.
-    pub async fn send_time(&self, world: &World) {
-        let l_world = world.level_time.lock().await;
+    pub fn send_time(&self, world: &World) {
+        let l_world = world.level_time.lock();
         match self.client.as_ref() {
             ClientPlatform::Java(java_client) => {
-                java_client
-                    .enqueue_packet(&CUpdateTime::new(
-                        l_world.world_age,
-                        l_world.time_of_day,
-                        true,
-                    ))
-                    .await;
+                java_client.enqueue_packet(&CUpdateTime::new(
+                    l_world.world_age,
+                    l_world.time_of_day,
+                    true,
+                ));
             }
             ClientPlatform::Bedrock(bedrock_client) => {
-                bedrock_client
-                    .send_game_packet(&CSetTime {
-                        time: VarInt(l_world.query_daytime() as _),
-                    })
-                    .await;
+                bedrock_client.send_game_packet(&CSetTime {
+                    time: VarInt(l_world.query_daytime() as _),
+                });
             }
         }
     }
 
-    async fn unload_watched_chunks(&self, world: &World) {
+    fn unload_watched_chunks(&self, world: &World) {
         let radial_chunks = self.watched_section.load().all_chunks_within();
         let level = &world.level;
-        let chunks_to_clean = level.mark_chunks_as_not_watched(&radial_chunks).await;
-        level.clean_chunks(&chunks_to_clean).await;
+        let chunks_to_clean = level.mark_chunks_as_not_watched(&radial_chunks);
+        level.clean_chunks(&chunks_to_clean);
         for chunk in chunks_to_clean {
             self.client
-                .enqueue_packet(&CUnloadChunk::new(chunk.x, chunk.y))
-                .await;
+                .enqueue_packet(&CUnloadChunk::new(chunk.x, chunk.y));
         }
 
         self.watched_section.store(Cylindrical::new(
@@ -1064,7 +1014,7 @@ impl Player {
     }
 
     /// Teleports the player to a different world or dimension with an optional position, yaw, and pitch.
-    pub async fn teleport_world(
+    pub fn teleport_world(
         self: &Arc<Self>,
         new_world: Arc<World>,
         position: Vector3<f64>,
@@ -1072,7 +1022,7 @@ impl Player {
         pitch: Option<f32>,
     ) {
         let current_world = self.living_entity.entity.world.clone();
-        let yaw = yaw.unwrap_or(new_world.level_info.read().await.spawn_angle);
+        let yaw = yaw.unwrap_or(new_world.level_info.read().spawn_angle);
         let pitch = pitch.unwrap_or(10.0);
 
         send_cancellable! {{
@@ -1095,16 +1045,16 @@ impl Player {
 
                 self.set_client_loaded(false);
                 let uuid = self.gameprofile.id;
-                current_world.remove_player(self, false).await;
-                new_world.players.write().await.insert(uuid, Arc::new(Self::new(
+                current_world.remove_player(self, false);
+                new_world.players.write().insert(uuid, Arc::new(Self::new(
                             self.client.clone(),
                             self.gameprofile.clone(),
-                            self.config.read().await.clone(),
+                            self.config.read().clone(),
                             new_world.clone(),
                             self.gamemode.load(),
                         )
-                        .await));
-                self.unload_watched_chunks(&current_world).await;
+                        ));
+                self.unload_watched_chunks(&current_world);
 
                 let last_pos = self.living_entity.entity.last_pos.load();
                 let death_dimension = self.world().dimension_type.resource_location();
@@ -1126,19 +1076,19 @@ impl Player {
                         VarInt(self.get_entity().portal_cooldown.load(Ordering::Relaxed) as i32),
                         new_world.sea_level.into(),
                         1,
-                    )).await
+                    ))
                     ;
-                self.send_permission_lvl_update().await;
-                self.clone().request_teleport(position, yaw, pitch).await;
+                self.send_permission_lvl_update();
+                self.clone().request_teleport(position, yaw, pitch);
                 self.living_entity.entity.last_pos.store(position);
-                self.send_abilities_update().await;
+                self.send_abilities_update();
                 self.enqueue_set_held_item_packet(&CSetSelectedSlot::new(
                    self.get_inventory().get_selected_slot() as i8,
-                )).await;
-                self.on_screen_handler_opened(self.player_screen_handler.clone()).await;
-                self.send_health().await;
+                ));
+                self.on_screen_handler_opened(self.player_screen_handler.clone());
+                self.send_health();
 
-                new_world.send_world_info(self, position, yaw, pitch).await;
+                new_world.send_world_info(self, position, yaw, pitch);
             }
         }}
     }
@@ -1146,7 +1096,7 @@ impl Player {
     /// `yaw` and `pitch` are in degrees.
     /// Rarly used, for example when waking up the player from a bed or their first time spawn. Otherwise, the `teleport` method should be used.
     /// The player should respond with the `SConfirmTeleport` packet.
-    pub async fn request_teleport(self: &Arc<Self>, position: Vector3<f64>, yaw: f32, pitch: f32) {
+    pub fn request_teleport(self: &Arc<Self>, position: Vector3<f64>, yaw: f32, pitch: f32) {
         // This is the ultra special magic code used to create the teleport id
         // This returns the old value
         // This operation wraps around on overflow.
@@ -1168,7 +1118,7 @@ impl Player {
                 self.living_entity.entity.set_pos(position);
                 let entity = &self.living_entity.entity;
                 entity.set_rotation(yaw, pitch);
-                *self.awaiting_teleport.lock().await = Some((teleport_id.into(), position));
+                *self.awaiting_teleporting_teleport.lock() = Some((teleport_id.into(), position));
                 self.client
                     .send_packet_now(&CPlayerPosition::new(
                         teleport_id.into(),
@@ -1178,7 +1128,7 @@ impl Player {
                         pitch,
                         // TODO
                         Vec::new(),
-                    )).await;
+                    ));
             }
         }}
     }
@@ -1203,8 +1153,8 @@ impl Player {
         }) < d * d
     }
 
-    pub async fn kick(&self, reason: DisconnectReason, message: TextComponent) {
-        self.client.kick(reason, message).await;
+    pub fn kick(&self, reason: DisconnectReason, message: TextComponent) {
+        self.client.kick(reason, message);
     }
 
     pub fn can_food_heal(&self) -> bool {
@@ -1213,29 +1163,27 @@ impl Player {
         health > 0.0 && health < max_health
     }
 
-    pub async fn add_exhaustion(&self, exhaustion: f32) {
-        if self.abilities.lock().await.invulnerable {
+    pub fn add_exhaustion(&self, exhaustion: f32) {
+        if self.abilities.lock().invulnerable {
             return;
         }
         self.hunger_manager.add_exhaustion(exhaustion);
     }
 
-    pub async fn heal(&self, additional_health: f32) {
-        self.living_entity.heal(additional_health).await;
-        self.send_health().await;
+    pub fn heal(&self, additional_health: f32) {
+        self.living_entity.heal(additional_health);
+        self.send_health();
     }
 
-    pub async fn send_health(&self) {
-        self.client
-            .enqueue_packet(&CSetHealth::new(
-                self.living_entity.health.load(),
-                self.hunger_manager.level.load().into(),
-                self.hunger_manager.saturation.load(),
-            ))
-            .await;
+    pub fn send_health(&self) {
+        self.client.enqueue_packet(&CSetHealth::new(
+            self.living_entity.health.load(),
+            self.hunger_manager.level.load().into(),
+            self.hunger_manager.saturation.load(),
+        ));
     }
 
-    pub async fn tick_health(&self) {
+    pub fn tick_health(&self) {
         let health = self.living_entity.health.load() as i32;
         let food = self.hunger_manager.level.load();
         let saturation = self.hunger_manager.saturation.load();
@@ -1249,13 +1197,13 @@ impl Player {
             self.last_sent_food.store(food, Ordering::Relaxed);
             self.last_food_saturation
                 .store(saturation == 0.0, Ordering::Relaxed);
-            self.send_health().await;
+            self.send_health();
         }
     }
 
-    pub async fn set_health(&self, health: f32) {
-        self.living_entity.set_health(health).await;
-        self.send_health().await;
+    pub fn set_health(&self, health: f32) {
+        self.living_entity.set_health(health);
+        self.send_health();
     }
 
     pub fn tick_client_load_timeout(&self) {
@@ -1266,14 +1214,13 @@ impl Player {
         }
     }
 
-    async fn handle_killed(&self, death_msg: TextComponent) {
+    fn handle_killed(&self, death_msg: TextComponent) {
         self.set_client_loaded(false);
         self.client
-            .send_packet_now(&CCombatDeath::new(self.entity_id().into(), &death_msg))
-            .await;
+            .send_packet_now(&CCombatDeath::new(self.entity_id().into(), &death_msg));
     }
 
-    pub async fn set_gamemode(self: &Arc<Self>, gamemode: GameMode) {
+    pub fn set_gamemode(self: &Arc<Self>, gamemode: GameMode) {
         // We could send the same gamemode without any problems. But why waste bandwidth?
         assert_ne!(
             self.gamemode.load(),
@@ -1296,10 +1243,10 @@ impl Player {
                 // self.previous_gamemode.store(self.previous_gamemode.load());
                 {
                     // Use another scope so that we instantly unlock `abilities`.
-                    let mut abilities = self.abilities.lock().await;
+                    let mut abilities = self.abilities.lock();
                     abilities.set_for_gamemode(gamemode);
                 };
-                self.send_abilities_update().await;
+                self.send_abilities_update();
 
                 self.living_entity.entity.invulnerable.store(
                     matches!(gamemode, GameMode::Creative | GameMode::Spectator),
@@ -1315,64 +1262,53 @@ impl Player {
                             actions: &[PlayerAction::UpdateGameMode((gamemode as i32).into())],
                         }],
                     ))
-                    .await;
+                    ;
 
                 self.client
                     .enqueue_packet(&CGameEvent::new(
                         GameEvent::ChangeGameMode,
                         gamemode as i32 as f32,
-                    )).await;
+                    ));
             }
         }}
     }
 
     /// Send the player's skin layers and used hand to all players.
-    pub async fn send_client_information(&self) {
-        let config = self.config.read().await;
-        self.living_entity
-            .entity
-            .send_meta_data(&[
-                Metadata::new(
-                    DATA_PLAYER_MODE_CUSTOMISATION,
-                    MetaDataType::Byte,
-                    config.skin_parts,
-                ),
-                Metadata::new(
-                    DATA_PLAYER_MAIN_HAND,
-                    MetaDataType::Byte,
-                    config.main_hand as u8,
-                ),
-            ])
-            .await;
+    pub fn send_client_information(&self) {
+        let config = self.config.read();
+        self.living_entity.entity.send_meta_data(&[
+            Metadata::new(
+                DATA_PLAYER_MODE_CUSTOMISATION,
+                MetaDataType::Byte,
+                config.skin_parts,
+            ),
+            Metadata::new(
+                DATA_PLAYER_MAIN_HAND,
+                MetaDataType::Byte,
+                config.main_hand as u8,
+            ),
+        ]);
     }
 
-    pub async fn can_harvest(&self, state: &BlockState, block: &'static Block) -> bool {
+    pub fn can_harvest(&self, state: &BlockState, block: &'static Block) -> bool {
         !state.tool_required()
             || self
                 .inventory
                 .held_item()
                 .lock()
-                .await
                 .is_correct_for_drops(block)
     }
 
-    pub async fn get_mining_speed(&self, block: &'static Block) -> f32 {
-        let mut speed = self.inventory.held_item().lock().await.get_speed(block);
+    pub fn get_mining_speed(&self, block: &'static Block) -> f32 {
+        let mut speed = self.inventory.held_item().lock().get_speed(block);
         // Haste
-        if self.living_entity.has_effect(&StatusEffect::HASTE).await
-            || self
-                .living_entity
-                .has_effect(&StatusEffect::CONDUIT_POWER)
-                .await
+        if self.living_entity.has_effect(&StatusEffect::HASTE)
+            || self.living_entity.has_effect(&StatusEffect::CONDUIT_POWER)
         {
-            speed *= 1.0 + (self.get_haste_amplifier().await + 1) as f32 * 0.2;
+            speed *= 1.0 + (self.get_haste_amplifier() + 1) as f32 * 0.2;
         }
         // Fatigue
-        if let Some(fatigue) = self
-            .living_entity
-            .get_effect(&StatusEffect::MINING_FATIGUE)
-            .await
-        {
+        if let Some(fatigue) = self.living_entity.get_effect(&StatusEffect::MINING_FATIGUE) {
             let fatigue_speed = match fatigue.amplifier {
                 0 => 0.3,
                 1 => 0.09,
@@ -1388,40 +1324,34 @@ impl Player {
         speed
     }
 
-    async fn get_haste_amplifier(&self) -> u32 {
+    fn get_haste_amplifier(&self) -> u32 {
         let mut i = 0;
         let mut j = 0;
-        if let Some(effect) = self.living_entity.get_effect(&StatusEffect::HASTE).await {
+        if let Some(effect) = self.living_entity.get_effect(&StatusEffect::HASTE) {
             i = effect.amplifier;
         }
-        if let Some(effect) = self
-            .living_entity
-            .get_effect(&StatusEffect::CONDUIT_POWER)
-            .await
-        {
+        if let Some(effect) = self.living_entity.get_effect(&StatusEffect::CONDUIT_POWER) {
             j = effect.amplifier;
         }
         u32::from(i.max(j))
     }
 
-    pub async fn send_message(
+    pub fn send_message(
         &self,
         message: &TextComponent,
         chat_type: u8,
         sender_name: &TextComponent,
         target_name: Option<&TextComponent>,
     ) {
-        self.client
-            .enqueue_packet(&CDisguisedChatMessage::new(
-                message,
-                (chat_type + 1).into(),
-                sender_name,
-                target_name,
-            ))
-            .await;
+        self.client.enqueue_packet(&CDisguisedChatMessage::new(
+            message,
+            (chat_type + 1).into(),
+            sender_name,
+            target_name,
+        ));
     }
 
-    pub async fn drop_item(&self, item_stack: ItemStack) {
+    pub fn drop_item(&self, item_stack: ItemStack) {
         let item_pos = self.living_entity.entity.pos.load()
             + Vector3::new(0.0, f64::from(EntityType::PLAYER.eye_height) - 0.3, 0.0);
         let entity = Entity::new(
@@ -1448,29 +1378,27 @@ impl Player {
         );
 
         // TODO: Merge stacks together
-        let item_entity =
-            Arc::new(ItemEntity::new_with_velocity(entity, item_stack, velocity, 40).await);
-        self.world().spawn_entity(item_entity).await;
+        let item_entity = Arc::new(ItemEntity::new_with_velocity(
+            entity, item_stack, velocity, 40,
+        ));
+        self.world().spawn_entity(item_entity);
     }
 
-    pub async fn drop_held_item(&self, drop_stack: bool) {
+    pub fn drop_held_item(&self, drop_stack: bool) {
         // should be locked first otherwise cause deadlock in tick() (this thread lock stack, that thread lock screen_handler)
 
         let binding = self.inventory.held_item();
-        let mut item_stack = binding.lock().await;
+        let mut item_stack = binding.lock();
 
         if !item_stack.is_empty() {
             let drop_amount = if drop_stack { item_stack.item_count } else { 1 };
-            self.drop_item(item_stack.copy_with_count(drop_amount))
-                .await;
+            self.drop_item(item_stack.copy_with_count(drop_amount));
             item_stack.decrement(drop_amount);
             let selected_slot = self.inventory.get_selected_slot();
             let inv: Arc<dyn Inventory> = self.inventory.clone();
-            let screen_binding = self.current_screen_handler.lock().await;
-            let mut screen_handler = screen_binding.lock().await;
-            let slot_index = screen_handler
-                .get_slot_index(&inv, selected_slot as usize)
-                .await;
+            let screen_binding = self.current_screen_handler.lock();
+            let mut screen_handler = screen_binding.lock();
+            let slot_index = screen_handler.get_slot_index(&inv, selected_slot as usize);
 
             if let Some(slot_index) = slot_index {
                 screen_handler.set_received_stack(slot_index, item_stack.clone());
@@ -1478,27 +1406,26 @@ impl Player {
         }
     }
 
-    pub async fn swap_item(&self) {
-        let (main_hand_item, off_hand_item) = self.inventory.swap_item().await;
+    pub fn swap_item(&self) {
+        let (main_hand_item, off_hand_item) = self.inventory.swap_item();
         let equipment = &[
             (EquipmentSlot::MAIN_HAND, main_hand_item),
             (EquipmentSlot::OFF_HAND, off_hand_item),
         ];
-        self.living_entity.send_equipment_changes(equipment).await;
+        self.living_entity.send_equipment_changes(equipment);
         // todo this.player.stopUsingItem();
     }
 
-    pub async fn send_system_message(&self, text: &TextComponent) {
-        self.send_system_message_raw(text, false).await;
+    pub fn send_system_message(&self, text: &TextComponent) {
+        self.send_system_message_raw(text, false);
     }
 
-    pub async fn send_system_message_raw(&self, text: &TextComponent, overlay: bool) {
+    pub fn send_system_message_raw(&self, text: &TextComponent, overlay: bool) {
         self.client
-            .enqueue_packet(&CSystemChatMessage::new(text, overlay))
-            .await;
+            .enqueue_packet(&CSystemChatMessage::new(text, overlay));
     }
 
-    pub async fn tick_experience(&self) {
+    pub fn tick_experience(&self) {
         let level = self.experience_level.load(Ordering::Relaxed);
         if self.last_sent_xp.load(Ordering::Relaxed) != level {
             let progress = self.experience_progress.load();
@@ -1506,36 +1433,32 @@ impl Player {
 
             self.last_sent_xp.store(level, Ordering::Relaxed);
 
-            self.client
-                .send_packet_now(&CSetExperience::new(
-                    progress.clamp(0.0, 1.0),
-                    points.into(),
-                    level.into(),
-                ))
-                .await;
+            self.client.send_packet_now(&CSetExperience::new(
+                progress.clamp(0.0, 1.0),
+                points.into(),
+                level.into(),
+            ));
         }
     }
 
     /// Sets the player's experience level and notifies the client.
-    pub async fn set_experience(&self, level: i32, progress: f32, points: i32) {
+    pub fn set_experience(&self, level: i32, progress: f32, points: i32) {
         // TODO: These should be atomic together, not isolated; make a struct containing these. can cause ABA issues
         self.experience_level.store(level, Ordering::Relaxed);
         self.experience_progress.store(progress.clamp(0.0, 1.0));
         self.experience_points.store(points, Ordering::Relaxed);
         self.last_sent_xp.store(-1, Ordering::Relaxed);
-        self.tick_experience().await;
+        self.tick_experience();
 
-        self.client
-            .enqueue_packet(&CSetExperience::new(
-                progress.clamp(0.0, 1.0),
-                points.into(),
-                level.into(),
-            ))
-            .await;
+        self.client.enqueue_packet(&CSetExperience::new(
+            progress.clamp(0.0, 1.0),
+            points.into(),
+            level.into(),
+        ));
     }
 
     /// Sets the player's experience level directly.
-    pub async fn set_experience_level(&self, new_level: i32, keep_progress: bool) {
+    pub fn set_experience_level(&self, new_level: i32, keep_progress: bool) {
         let progress = self.experience_progress.load();
         let mut points = self.experience_points.load(Ordering::Relaxed);
 
@@ -1552,22 +1475,22 @@ impl Player {
             points = (points as f32 * scale) as i32;
         }
 
-        self.set_experience(new_level, progress, points).await;
+        self.set_experience(new_level, progress, points);
     }
 
-    pub async fn add_effect(&self, effect: Effect) {
-        self.send_effect(effect.clone()).await;
-        self.living_entity.add_effect(effect).await;
+    pub fn add_effect(&self, effect: Effect) {
+        self.send_effect(effect.clone());
+        self.living_entity.add_effect(effect);
     }
 
-    pub async fn send_active_effects(&self) {
-        let effects = self.living_entity.active_effects.lock().await;
+    pub fn send_active_effects(&self) {
+        let effects = self.living_entity.active_effects.lock();
         for effect in effects.values() {
-            self.send_effect(effect.clone()).await;
+            self.send_effect(effect.clone());
         }
     }
 
-    pub async fn send_effect(&self, effect: Effect) {
+    pub fn send_effect(&self, effect: Effect) {
         let mut flag: i8 = 0;
 
         if effect.ambient {
@@ -1584,65 +1507,59 @@ impl Player {
         }
 
         let effect_id = VarInt(i32::from(effect.effect_type.id));
-        self.client
-            .enqueue_packet(&CUpdateMobEffect::new(
-                self.entity_id().into(),
-                effect_id,
-                effect.amplifier.into(),
-                effect.duration.into(),
-                flag,
-            ))
-            .await;
+        self.client.enqueue_packet(&CUpdateMobEffect::new(
+            self.entity_id().into(),
+            effect_id,
+            effect.amplifier.into(),
+            effect.duration.into(),
+            flag,
+        ));
     }
 
-    pub async fn remove_effect(&self, effect_type: &'static StatusEffect) {
+    pub fn remove_effect(&self, effect_type: &'static StatusEffect) {
         let effect_id = VarInt(i32::from(effect_type.id));
-        self.client
-            .enqueue_packet(
-                &pumpkin_protocol::java::client::play::CRemoveMobEffect::new(
-                    self.entity_id().into(),
-                    effect_id,
-                ),
-            )
-            .await;
-        self.living_entity.remove_effect(effect_type).await;
+        self.client.enqueue_packet(
+            &pumpkin_protocol::java::client::play::CRemoveMobEffect::new(
+                self.entity_id().into(),
+                effect_id,
+            ),
+        );
+        self.living_entity.remove_effect(effect_type);
 
         // TODO broadcast metadata
     }
 
-    pub async fn remove_all_effect(&self) -> u8 {
+    pub fn remove_all_effect(&self) -> u8 {
         let mut count = 0;
         let mut effect_list = vec![];
-        for effect in self.living_entity.active_effects.lock().await.keys() {
+        for effect in self.living_entity.active_effects.lock().keys() {
             effect_list.push(*effect);
             let effect_id = VarInt(i32::from(effect.id));
-            self.client
-                .enqueue_packet(
-                    &pumpkin_protocol::java::client::play::CRemoveMobEffect::new(
-                        self.entity_id().into(),
-                        effect_id,
-                    ),
-                )
-                .await;
+            self.client.enqueue_packet(
+                &pumpkin_protocol::java::client::play::CRemoveMobEffect::new(
+                    self.entity_id().into(),
+                    effect_id,
+                ),
+            );
             count += 1;
         }
         //Need to remove effect after because the player effect are lock in the for before
         for effect in effect_list {
-            self.living_entity.remove_effect(effect).await;
+            self.living_entity.remove_effect(effect);
         }
 
         count
     }
 
     /// Add experience levels to the player.
-    pub async fn add_experience_levels(&self, added_levels: i32) {
+    pub fn add_experience_levels(&self, added_levels: i32) {
         let current_level = self.experience_level.load(Ordering::Relaxed);
         let new_level = current_level + added_levels;
-        self.set_experience_level(new_level, true).await;
+        self.set_experience_level(new_level, true);
     }
 
     /// Set the player's experience points directly. Returns `true` if successful.
-    pub async fn set_experience_points(&self, new_points: i32) -> bool {
+    pub fn set_experience_points(&self, new_points: i32) -> bool {
         let current_points = self.experience_points.load(Ordering::Relaxed);
 
         if new_points == current_points {
@@ -1657,20 +1574,19 @@ impl Player {
         }
 
         let progress = new_points as f32 / max_points as f32;
-        self.set_experience(current_level, progress, new_points)
-            .await;
+        self.set_experience(current_level, progress, new_points);
         true
     }
 
     /// Add experience points to the player.
-    pub async fn add_experience_points(&self, added_points: i32) {
+    pub fn add_experience_points(&self, added_points: i32) {
         let current_level = self.experience_level.load(Ordering::Relaxed);
         let current_points = self.experience_points.load(Ordering::Relaxed);
         let total_exp = experience::points_to_level(current_level) + current_points;
         let new_total_exp = total_exp + added_points;
         let (new_level, new_points) = experience::total_to_level_and_points(new_total_exp);
         let progress = experience::progress_in_level(new_points, new_level);
-        self.set_experience(new_level, progress, new_points).await;
+        self.set_experience(new_level, progress, new_points);
     }
 
     pub fn increment_screen_handler_sync_id(&self) {
@@ -1679,98 +1595,71 @@ impl Player {
             .store(current_id % 100 + 1, Ordering::Relaxed);
     }
 
-    pub async fn close_handled_screen(&self) {
-        self.client
-            .enqueue_packet(&CCloseContainer::new(
-                self.current_screen_handler
-                    .lock()
-                    .await
-                    .lock()
-                    .await
-                    .sync_id()
-                    .into(),
-            ))
-            .await;
-        self.on_handled_screen_closed().await;
+    pub fn close_handled_screen(&self) {
+        self.client.enqueue_packet(&CCloseContainer::new(
+            self.current_screen_handler.lock().lock().sync_id().into(),
+        ));
+        self.on_handled_screen_closed();
     }
 
-    pub async fn on_handled_screen_closed(&self) {
-        self.current_screen_handler
-            .lock()
-            .await
-            .lock()
-            .await
-            .on_closed(self)
-            .await;
+    pub fn on_handled_screen_closed(&self) {
+        self.current_screen_handler.lock().lock().on_closed(self);
 
         let player_screen_handler: Arc<Mutex<dyn ScreenHandler>> =
             self.player_screen_handler.clone();
         let current_screen_handler: Arc<Mutex<dyn ScreenHandler>> =
-            self.current_screen_handler.lock().await.clone();
+            self.current_screen_handler.lock().clone();
 
         if !Arc::ptr_eq(&player_screen_handler, &current_screen_handler) {
             player_screen_handler
                 .lock()
-                .await
-                .copy_shared_slots(current_screen_handler)
-                .await;
+                .copy_shared_slots(current_screen_handler);
         }
 
-        *self.current_screen_handler.lock().await = self.player_screen_handler.clone();
+        *self.current_screen_handler.lock() = self.player_screen_handler.clone();
     }
 
-    pub async fn on_screen_handler_opened(&self, screen_handler: Arc<Mutex<dyn ScreenHandler>>) {
-        let mut screen_handler = screen_handler.lock().await;
+    pub fn on_screen_handler_opened(&self, screen_handler: Arc<Mutex<dyn ScreenHandler>>) {
+        let mut screen_handler = screen_handler.lock();
 
-        screen_handler
-            .add_listener(self.screen_handler_listener.clone())
-            .await;
+        screen_handler.add_listener(self.screen_handler_listener.clone());
 
-        screen_handler
-            .update_sync_handler(self.screen_handler_sync_handler.clone())
-            .await;
+        screen_handler.update_sync_handler(self.screen_handler_sync_handler.clone());
     }
 
-    pub async fn open_handled_screen(
+    pub fn open_handled_screen(
         &self,
         screen_handler_factory: &dyn ScreenHandlerFactory,
     ) -> Option<u8> {
         if !self
             .current_screen_handler
             .lock()
-            .await
             .lock()
-            .await
             .as_any()
             .is::<PlayerScreenHandler>()
         {
-            self.close_handled_screen().await;
+            self.close_handled_screen();
         }
 
         self.increment_screen_handler_sync_id();
 
-        if let Some(screen_handler) = screen_handler_factory
-            .create_screen_handler(
-                self.screen_handler_sync_id.load(Ordering::Relaxed),
-                &self.inventory,
-                self,
-            )
-            .await
-        {
-            let screen_handler_temp = screen_handler.lock().await;
-            self.client
-                .enqueue_packet(&COpenScreen::new(
-                    screen_handler_temp.sync_id().into(),
-                    (screen_handler_temp
-                        .window_type()
-                        .expect("Can't open PlayerScreenHandler") as i32)
-                        .into(),
-                    &screen_handler_factory.get_display_name(),
-                ))
-                .await;
+        if let Some(screen_handler) = screen_handler_factory.create_screen_handler(
+            self.screen_handler_sync_id.load(Ordering::Relaxed),
+            &self.inventory,
+            self,
+        ) {
+            let screen_handler_temp = screen_handler.lock();
+            self.client.enqueue_packet(&COpenScreen::new(
+                screen_handler_temp.sync_id().into(),
+                (screen_handler_temp
+                    .window_type()
+                    .expect("Can't open PlayerScreenHandler") as i32)
+                    .into(),
+                &screen_handler_factory.get_display_name(),
+            ));
             drop(screen_handler_temp);
-            self.on_screen_handler_opened(screen_handler.clone()).await;
-            *self.current_screen_handler.lock().await = screen_handler;
+            self.on_screen_handler_opened(screen_handler.clone());
+            *self.current_screen_handler.lock() = screen_handler;
             Some(self.screen_handler_sync_id.load(Ordering::Relaxed))
         } else {
             //TODO: Send message if spectator
@@ -1779,9 +1668,9 @@ impl Player {
         }
     }
 
-    pub async fn on_slot_click(&self, packet: SClickSlot) {
-        let screen_handler = self.current_screen_handler.lock().await;
-        let mut screen_handler = screen_handler.lock().await;
+    pub fn on_slot_click(&self, packet: SClickSlot) {
+        let screen_handler = self.current_screen_handler.lock();
+        let mut screen_handler = screen_handler.lock();
         let behaviour = screen_handler.get_behaviour();
 
         // behaviour is dropped here
@@ -1790,7 +1679,7 @@ impl Player {
         }
 
         if self.gamemode.load() == GameMode::Spectator {
-            screen_handler.sync_state().await;
+            screen_handler.sync_state();
             return;
         }
 
@@ -1805,7 +1694,7 @@ impl Player {
 
         let slot = packet.slot;
 
-        if !screen_handler.is_slot_valid(i32::from(slot)).await {
+        if !screen_handler.is_slot_valid(i32::from(slot)) {
             warn!(
                 "Player {} clicked invalid slot index: {}, available slots: {}",
                 self.gameprofile.name,
@@ -1817,37 +1706,33 @@ impl Player {
 
         let not_in_sync = packet.revision.0 != (behaviour.revision.load(Ordering::Relaxed) as i32);
 
-        screen_handler.disable_sync().await;
-        screen_handler
-            .on_slot_click(
-                i32::from(slot),
-                i32::from(packet.button),
-                packet.mode.clone(),
-                self,
-            )
-            .await;
+        screen_handler.disable_sync();
+        screen_handler.on_slot_click(
+            i32::from(slot),
+            i32::from(packet.button),
+            packet.mode.clone(),
+            self,
+        );
 
         for (key, value) in packet.array_of_changed_slots {
             screen_handler.set_received_hash(key as usize, value);
         }
 
         screen_handler.set_received_cursor_hash(packet.carried_item);
-        screen_handler.enable_sync().await;
+        screen_handler.enable_sync();
 
         if not_in_sync {
-            screen_handler.update_to_client().await;
+            screen_handler.update_to_client();
         } else {
-            screen_handler.send_content_updates().await;
+            screen_handler.send_content_updates();
             drop(screen_handler);
         }
     }
 
     /// Check if the player has a specific permission
-    pub async fn has_permission(&self, node: &str) -> bool {
-        let perm_manager = PERMISSION_MANAGER.read().await;
-        perm_manager
-            .has_permission(&self.gameprofile.id, node, self.permission_lvl.load())
-            .await
+    pub fn has_permission(&self, node: &str) -> bool {
+        let perm_manager = PERMISSION_MANAGER.read();
+        perm_manager.has_permission(&self.gameprofile.id, node, self.permission_lvl.load())
     }
 
     pub fn is_creative(&self) -> bool {
@@ -1855,7 +1740,7 @@ impl Player {
     }
 
     /// Swing the hand of the player
-    pub async fn swing_hand(&self, hand: Hand, all: bool) {
+    pub fn swing_hand(&self, hand: Hand, all: bool) {
         let world = self.world();
         let entity_id = VarInt(self.entity_id());
 
@@ -1866,27 +1751,24 @@ impl Player {
 
         let packet = CEntityAnimation::new(entity_id, animation);
         if all {
-            world.broadcast_packet_all(&packet).await;
+            world.broadcast_packet_all(&packet);
         } else {
-            world
-                .broadcast_packet_except(&[self.gameprofile.id], &packet)
-                .await;
+            world.broadcast_packet_except(&[self.gameprofile.id], &packet);
         }
     }
 
-    pub async fn reset_state(&self) {
-        self.living_entity.reset_state().await;
+    pub fn reset_state(&self) {
+        self.living_entity.reset_state();
     }
 }
 
-#[async_trait]
 impl NBTStorage for Player {
-    async fn write_nbt(&self, nbt: &mut NbtCompound) {
+    fn write_nbt(&self, nbt: &mut NbtCompound) {
         nbt.put_int("DataVersion", DATA_VERSION);
-        self.living_entity.write_nbt(nbt).await;
-        self.inventory.write_nbt(nbt).await;
+        self.living_entity.write_nbt(nbt);
+        self.inventory.write_nbt(nbt);
 
-        self.abilities.lock().await.write_nbt(nbt).await;
+        self.abilities.lock().write_nbt(nbt);
 
         // Store total XP instead of individual components
         let total_exp = experience::points_to_level(self.experience_level.load(Ordering::Relaxed))
@@ -1903,7 +1785,7 @@ impl NBTStorage for Player {
         );
 
         // Store food level, saturation, exhaustion, and tick timer
-        self.hunger_manager.write_nbt(nbt).await;
+        self.hunger_manager.write_nbt(nbt);
 
         nbt.put_string(
             "Dimension",
@@ -1911,10 +1793,10 @@ impl NBTStorage for Player {
         );
     }
 
-    async fn read_nbt(&mut self, nbt: &mut NbtCompound) {
-        self.living_entity.read_nbt(nbt).await;
-        self.inventory.read_nbt_non_mut(nbt).await;
-        self.abilities.lock().await.read_nbt(nbt).await;
+    fn read_nbt(&mut self, nbt: &mut NbtCompound) {
+        self.living_entity.read_nbt(nbt);
+        self.inventory.read_nbt_non_mut(nbt);
+        self.abilities.lock().read_nbt(nbt);
 
         self.gamemode.store(
             GameMode::try_from(nbt.get_byte("playerGameType").unwrap_or(0))
@@ -1932,7 +1814,7 @@ impl NBTStorage for Player {
         );
 
         // Load food level, saturation, exhaustion, and tick timer
-        self.hunger_manager.read_nbt(nbt).await;
+        self.hunger_manager.read_nbt(nbt);
 
         // Load from total XP
         let total_exp = nbt.get_int("XpTotal").unwrap_or(0);
@@ -1946,16 +1828,15 @@ impl NBTStorage for Player {
 
 impl NBTStorageInit for Player {}
 
-#[async_trait]
 impl NBTStorage for PlayerInventory {
-    async fn write_nbt(&self, nbt: &mut NbtCompound) {
+    fn write_nbt(&self, nbt: &mut NbtCompound) {
         // Save the selected slot (hotbar)
         nbt.put_int("SelectedItemSlot", i32::from(self.get_selected_slot()));
 
         // Create inventory list with the correct capacity (inventory size)
         let mut vec: Vec<NbtTag> = Vec::with_capacity(41);
         for (i, item) in self.main_inventory.iter().enumerate() {
-            let stack = item.lock().await;
+            let stack = item.lock();
             if !stack.is_empty() {
                 let mut item_compound = NbtCompound::new();
                 item_compound.put_byte("Slot", i as i8);
@@ -1967,8 +1848,8 @@ impl NBTStorage for PlayerInventory {
 
         let mut equipment_compound = NbtCompound::new();
         for slot in self.equipment_slots.values() {
-            let stack_binding = self.entity_equipment.lock().await.get(slot);
-            let stack = stack_binding.lock().await;
+            let stack_binding = self.entity_equipment.lock().get(slot);
+            let stack = stack_binding.lock();
             if !stack.is_empty() {
                 let mut item_compound = NbtCompound::new();
                 stack.write_item_stack(&mut item_compound);
@@ -1999,7 +1880,7 @@ impl NBTStorage for PlayerInventory {
         nbt.put("Inventory", NbtTag::List(vec));
     }
 
-    async fn read_nbt_non_mut(&self, nbt: &NbtCompound) {
+    fn read_nbt_non_mut(&self, nbt: &NbtCompound) {
         // Read selected hotbar slot
         self.set_selected_slot(nbt.get_int("SelectedItemSlot").unwrap_or(0) as u8);
         // Process inventory list
@@ -2010,7 +1891,7 @@ impl NBTStorage for PlayerInventory {
                 {
                     let slot = slot_byte as usize;
                     if let Some(item_stack) = ItemStack::read_item_stack(item_compound) {
-                        self.set_stack(slot, item_stack).await;
+                        self.set_stack(slot, item_stack);
                     }
                 }
             }
@@ -2020,31 +1901,31 @@ impl NBTStorage for PlayerInventory {
             if let Some(offhand) = equipment.get_compound("offhand")
                 && let Some(item_stack) = ItemStack::read_item_stack(offhand)
             {
-                self.set_stack(40, item_stack).await;
+                self.set_stack(40, item_stack);
             }
 
             if let Some(head) = equipment.get_compound("head")
                 && let Some(item_stack) = ItemStack::read_item_stack(head)
             {
-                self.set_stack(39, item_stack).await;
+                self.set_stack(39, item_stack);
             }
 
             if let Some(chest) = equipment.get_compound("chest")
                 && let Some(item_stack) = ItemStack::read_item_stack(chest)
             {
-                self.set_stack(38, item_stack).await;
+                self.set_stack(38, item_stack);
             }
 
             if let Some(legs) = equipment.get_compound("legs")
                 && let Some(item_stack) = ItemStack::read_item_stack(legs)
             {
-                self.set_stack(37, item_stack).await;
+                self.set_stack(37, item_stack);
             }
 
             if let Some(feet) = equipment.get_compound("feet")
                 && let Some(item_stack) = ItemStack::read_item_stack(feet)
             {
-                self.set_stack(36, item_stack).await;
+                self.set_stack(36, item_stack);
             }
         }
     }
@@ -2052,9 +1933,8 @@ impl NBTStorage for PlayerInventory {
 
 impl NBTStorageInit for PlayerInventory {}
 
-#[async_trait]
 impl EntityBase for Player {
-    async fn damage_with_context(
+    fn damage_with_context(
         &self,
         caller: Arc<dyn EntityBase>,
         amount: f32,
@@ -2063,7 +1943,7 @@ impl EntityBase for Player {
         source: Option<&dyn EntityBase>,
         cause: Option<&dyn EntityBase>,
     ) -> bool {
-        if self.abilities.lock().await.invulnerable && damage_type != DamageType::GENERIC_KILL {
+        if self.abilities.lock().invulnerable && damage_type != DamageType::GENERIC_KILL {
             return false;
         }
         let dyn_self = self
@@ -2071,24 +1951,27 @@ impl EntityBase for Player {
             .entity
             .world
             .get_entity_by_id(self.living_entity.entity.entity_id)
-            .await
             .expect("Entity not found in world");
-        let result = self
-            .living_entity
-            .damage_with_context(caller, amount, damage_type, position, source, cause)
-            .await;
+        let result = self.living_entity.damage_with_context(
+            caller,
+            amount,
+            damage_type,
+            position,
+            source,
+            cause,
+        );
         if result {
             let health = self.living_entity.health.load();
             if health <= 0.0 {
                 let death_message =
-                    LivingEntity::get_death_message(&*dyn_self, damage_type, source, cause).await;
-                self.handle_killed(death_message).await;
+                    LivingEntity::get_death_message(&*dyn_self, damage_type, source, cause);
+                self.handle_killed(death_message);
             }
         }
         result
     }
 
-    async fn teleport(
+    fn teleport(
         self: Arc<Self>,
         position: Vector3<f64>,
         yaw: Option<f32>,
@@ -2109,7 +1992,7 @@ impl EntityBase for Player {
                 'after: {
                     let position = event.to;
                     let entity = self.get_entity();
-                    self.request_teleport(position, yaw, pitch).await;
+                    self.request_teleport(position, yaw, pitch);
                     entity
                         .world
                         .broadcast_packet_except(&[self.gameprofile.id], &CEntityPositionSync::new(
@@ -2120,11 +2003,11 @@ impl EntityBase for Player {
                             pitch,
                             entity.on_ground.load(Ordering::SeqCst),
                         ))
-                        .await;
+                        ;
                 }
             }}
         } else {
-            self.teleport_world(world, position, yaw, pitch).await;
+            self.teleport_world(world, position, yaw, pitch);
         }
     }
 
@@ -2149,7 +2032,7 @@ impl EntityBase for Player {
         TextComponent::text(self.gameprofile.name.clone())
     }
 
-    async fn get_display_name(&self) -> TextComponent {
+    fn get_display_name(&self) -> TextComponent {
         let name = self.get_name();
         let name_clone = name.clone();
         let mut name = name.click_event(ClickEvent::SuggestCommand {
@@ -2195,9 +2078,8 @@ pub struct Abilities {
     pub walk_speed: f32,
 }
 
-#[async_trait]
 impl NBTStorage for Abilities {
-    async fn write_nbt(&self, nbt: &mut NbtCompound) {
+    fn write_nbt(&self, nbt: &mut NbtCompound) {
         let mut component = NbtCompound::new();
         component.put_bool("invulnerable", self.invulnerable);
         component.put_bool("flying", self.flying);
@@ -2209,7 +2091,7 @@ impl NBTStorage for Abilities {
         nbt.put_component("abilities", component);
     }
 
-    async fn read_nbt(&mut self, nbt: &mut NbtCompound) {
+    fn read_nbt(&mut self, nbt: &mut NbtCompound) {
         if let Some(component) = nbt.get_compound("abilities") {
             self.invulnerable = component.get_bool("invulnerable").unwrap_or(false);
             self.flying = component.get_bool("flying").unwrap_or(false);
@@ -2353,13 +2235,12 @@ impl AsRef<[Box<[u8]>]> for LastSeen {
 impl LastSeen {
     /// The sender's `last_seen` signatures are sent as ID's if the recipient has them in their cache.
     /// Otherwise, the full signature is sent. (ID:0 indicates full signature is being sent)
-    pub async fn indexed_for(&self, recipient: &Arc<Player>) -> Box<[PreviousMessage]> {
+    pub fn indexed_for(&self, recipient: &Arc<Player>) -> Box<[PreviousMessage]> {
         let mut indexed = Vec::new();
         for signature in &self.0 {
             let index = recipient
                 .signature_cache
                 .lock()
-                .await
                 .full_cache
                 .iter()
                 .position(|s| s == signature);
@@ -2427,10 +2308,9 @@ impl MessageCache {
     }
 }
 
-#[async_trait]
 impl InventoryPlayer for Player {
-    async fn drop_item(&self, item: ItemStack, _retain_ownership: bool) {
-        self.drop_item(item).await;
+    fn drop_item(&self, item: ItemStack, _retain_ownership: bool) {
+        self.drop_item(item);
     }
 
     fn has_infinite_materials(&self) -> bool {
@@ -2441,27 +2321,27 @@ impl InventoryPlayer for Player {
         self.inventory.clone()
     }
 
-    async fn enqueue_inventory_packet(&self, packet: &CSetContainerContent) {
-        self.client.enqueue_packet(packet).await;
+    fn enqueue_inventory_packet(&self, packet: &CSetContainerContent) {
+        self.client.enqueue_packet(packet);
     }
 
-    async fn enqueue_slot_packet(&self, packet: &CSetContainerSlot) {
-        self.client.enqueue_packet(packet).await;
+    fn enqueue_slot_packet(&self, packet: &CSetContainerSlot) {
+        self.client.enqueue_packet(packet);
     }
 
-    async fn enqueue_cursor_packet(&self, packet: &CSetCursorItem) {
-        self.client.enqueue_packet(packet).await;
+    fn enqueue_cursor_packet(&self, packet: &CSetCursorItem) {
+        self.client.enqueue_packet(packet);
     }
 
-    async fn enqueue_property_packet(&self, packet: &CSetContainerProperty) {
-        self.client.enqueue_packet(packet).await;
+    fn enqueue_property_packet(&self, packet: &CSetContainerProperty) {
+        self.client.enqueue_packet(packet);
     }
 
-    async fn enqueue_slot_set_packet(&self, packet: &CSetPlayerInventory) {
-        self.client.enqueue_packet(packet).await;
+    fn enqueue_slot_set_packet(&self, packet: &CSetPlayerInventory) {
+        self.client.enqueue_packet(packet);
     }
 
-    async fn enqueue_set_held_item_packet(&self, packet: &CSetSelectedSlot) {
-        self.client.enqueue_packet(packet).await;
+    fn enqueue_set_held_item_packet(&self, packet: &CSetSelectedSlot) {
+        self.client.enqueue_packet(packet);
     }
 }

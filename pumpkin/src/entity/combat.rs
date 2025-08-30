@@ -22,13 +22,13 @@ pub enum AttackType {
 }
 
 impl AttackType {
-    pub async fn new(player: &Player, attack_cooldown_progress: f32) -> Self {
+    pub fn new(player: &Player, attack_cooldown_progress: f32) -> Self {
         let entity = &player.living_entity.entity;
 
         let sprinting = entity.sprinting.load(Ordering::Relaxed);
         let on_ground = entity.on_ground.load(Ordering::Relaxed);
         let fall_distance = player.living_entity.fall_distance.load();
-        let sword = player.inventory().held_item().lock().await.is_sword();
+        let sword = player.inventory().held_item().lock().is_sword();
 
         let is_strong = attack_cooldown_progress > 0.9;
         if sprinting && is_strong {
@@ -51,7 +51,7 @@ impl AttackType {
     }
 }
 
-pub async fn handle_knockback(attacker: &Entity, world: &World, victim: &Entity, strength: f64) {
+pub fn handle_knockback(attacker: &Entity, world: &World, victim: &Entity, strength: f64) {
     let yaw = attacker.yaw.load();
 
     let saved_velo = victim.velocity.load();
@@ -69,10 +69,10 @@ pub async fn handle_knockback(attacker: &Entity, world: &World, victim: &Entity,
     attacker.velocity.store(velocity.multiply(0.6, 1.0, 0.6));
 
     victim.velocity.store(saved_velo);
-    world.broadcast_packet_all(&packet).await;
+    world.broadcast_packet_all(&packet);
 }
 
-pub async fn spawn_sweep_particle(attacker_entity: &Entity, world: &World, pos: &Vector3<f64>) {
+pub fn spawn_sweep_particle(attacker_entity: &Entity, world: &World, pos: &Vector3<f64>) {
     let yaw = attacker_entity.yaw.load();
     let d = -f64::from((yaw.to_radians()).sin());
     let e = f64::from((yaw.to_radians()).cos());
@@ -80,47 +80,35 @@ pub async fn spawn_sweep_particle(attacker_entity: &Entity, world: &World, pos: 
     let scale = 0.5;
     let body_y = pos.y + f64::from(attacker_entity.height()) * scale;
 
-    world
-        .spawn_particle(
-            Vector3::new(pos.x + d, body_y, pos.z + e),
-            Vector3::new(0.0, 0.0, 0.0),
-            0.0,
-            0,
-            Particle::SweepAttack,
-        )
-        .await;
+    world.spawn_particle(
+        Vector3::new(pos.x + d, body_y, pos.z + e),
+        Vector3::new(0.0, 0.0, 0.0),
+        0.0,
+        0,
+        Particle::SweepAttack,
+    );
 }
 
-pub async fn player_attack_sound(pos: &Vector3<f64>, world: &World, attack_type: AttackType) {
+pub fn player_attack_sound(pos: &Vector3<f64>, world: &World, attack_type: AttackType) {
     match attack_type {
         AttackType::Knockback => {
-            world
-                .play_sound(
-                    Sound::EntityPlayerAttackKnockback,
-                    SoundCategory::Players,
-                    pos,
-                )
-                .await;
+            world.play_sound(
+                Sound::EntityPlayerAttackKnockback,
+                SoundCategory::Players,
+                pos,
+            );
         }
         AttackType::Critical => {
-            world
-                .play_sound(Sound::EntityPlayerAttackCrit, SoundCategory::Players, pos)
-                .await;
+            world.play_sound(Sound::EntityPlayerAttackCrit, SoundCategory::Players, pos);
         }
         AttackType::Sweeping => {
-            world
-                .play_sound(Sound::EntityPlayerAttackSweep, SoundCategory::Players, pos)
-                .await;
+            world.play_sound(Sound::EntityPlayerAttackSweep, SoundCategory::Players, pos);
         }
         AttackType::Strong => {
-            world
-                .play_sound(Sound::EntityPlayerAttackStrong, SoundCategory::Players, pos)
-                .await;
+            world.play_sound(Sound::EntityPlayerAttackStrong, SoundCategory::Players, pos);
         }
         AttackType::Weak => {
-            world
-                .play_sound(Sound::EntityPlayerAttackWeak, SoundCategory::Players, pos)
-                .await;
+            world.play_sound(Sound::EntityPlayerAttackWeak, SoundCategory::Players, pos);
         }
     }
 }

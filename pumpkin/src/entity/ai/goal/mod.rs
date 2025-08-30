@@ -1,10 +1,10 @@
 use crate::entity::mob::Mob;
-use async_trait::async_trait;
+
 use std::collections::HashSet;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::Relaxed;
-use tokio::sync::RwLock;
+use parking_lot::RwLock;
 
 pub mod active_target_goal;
 pub mod ambient_stand_goal;
@@ -22,18 +22,18 @@ pub fn to_goal_ticks(server_ticks: i32) -> i32 {
     -(-server_ticks).div_euclid(2)
 }
 
-#[async_trait]
+
 pub trait Goal: Send + Sync {
     /// How should the `Goal` initially start?
-    async fn can_start(&self, mob: &dyn Mob) -> bool;
+    fn can_start(&self, mob: &dyn Mob) -> bool;
     /// When it's started, how should it continue to run?
-    async fn should_continue(&self, mob: &dyn Mob) -> bool;
+    fn should_continue(&self, mob: &dyn Mob) -> bool;
     /// Call when goal start
-    async fn start(&self, mob: &dyn Mob);
+    fn start(&self, mob: &dyn Mob);
     /// Call when goal stop
-    async fn stop(&self, mob: &dyn Mob);
+    fn stop(&self, mob: &dyn Mob);
     /// If the `Goal` is running, this gets called every tick.
-    async fn tick(&self, mob: &dyn Mob);
+    fn tick(&self, mob: &dyn Mob);
 
     fn should_run_every_tick(&self) -> bool {
         false
@@ -53,8 +53,8 @@ pub trait Goal: Send + Sync {
 
     fn get_goal_control(&self) -> &GoalControl;
 
-    async fn set_controls(&self, controls: &[Control]) {
-        let mut self_controls = self.get_goal_control().controls.write().await;
+    fn set_controls(&self, controls: &[Control]) {
+        let mut self_controls = self.get_goal_control().controls.write();
         self_controls.clear();
         self_controls.extend(controls);
     }
@@ -114,32 +114,32 @@ impl PrioritizedGoal {
     }
 }
 
-#[async_trait]
+
 impl Goal for PrioritizedGoal {
-    async fn can_start(&self, mob: &dyn Mob) -> bool {
-        self.goal.can_start(mob).await
+    fn can_start(&self, mob: &dyn Mob) -> bool {
+        self.goal.can_start(mob)
     }
 
-    async fn should_continue(&self, mob: &dyn Mob) -> bool {
-        self.goal.should_continue(mob).await
+    fn should_continue(&self, mob: &dyn Mob) -> bool {
+        self.goal.should_continue(mob)
     }
 
-    async fn start(&self, mob: &dyn Mob) {
+    fn start(&self, mob: &dyn Mob) {
         if !self.running.load(Relaxed) {
             self.running.store(true, Relaxed);
-            self.goal.start(mob).await;
+            self.goal.start(mob);
         }
     }
 
-    async fn stop(&self, mob: &dyn Mob) {
+    fn stop(&self, mob: &dyn Mob) {
         if self.running.load(Relaxed) {
             self.running.store(false, Relaxed);
-            self.goal.stop(mob).await;
+            self.goal.stop(mob);
         }
     }
 
-    async fn tick(&self, mob: &dyn Mob) {
-        self.goal.tick(mob).await;
+    fn tick(&self, mob: &dyn Mob) {
+        self.goal.tick(mob);
     }
     fn should_run_every_tick(&self) -> bool {
         self.goal.should_run_every_tick()
@@ -153,7 +153,7 @@ impl Goal for PrioritizedGoal {
         self.goal.get_goal_control()
     }
 
-    async fn set_controls(&self, controls: &[Control]) {
-        self.goal.set_controls(controls).await;
+    fn set_controls(&self, controls: &[Control]) {
+        self.goal.set_controls(controls);
     }
 }

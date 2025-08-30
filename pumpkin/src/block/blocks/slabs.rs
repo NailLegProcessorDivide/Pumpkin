@@ -1,4 +1,3 @@
-use async_trait::async_trait;
 use pumpkin_data::BlockDirection;
 use pumpkin_data::block_properties::BlockProperties;
 use pumpkin_data::block_properties::SlabType;
@@ -17,9 +16,8 @@ type SlabProperties = pumpkin_data::block_properties::ResinBrickSlabLikeProperti
 #[pumpkin_block_from_tag("minecraft:slabs")]
 pub struct SlabBlock;
 
-#[async_trait]
 impl BlockBehaviour for SlabBlock {
-    async fn on_place(&self, args: OnPlaceArgs<'_>) -> BlockStateId {
+    fn on_place(&self, args: OnPlaceArgs<'_>) -> BlockStateId {
         if let BlockIsReplacing::Itself(state_id) = args.replacing {
             let mut slab_props = SlabProperties::from_state_id(state_id, args.block);
             slab_props.r#type = SlabType::Double;
@@ -33,7 +31,7 @@ impl BlockBehaviour for SlabBlock {
             BlockDirection::Up => SlabType::Top,
             BlockDirection::Down => SlabType::Bottom,
             _ => match args.use_item_on.cursor_pos.y {
-                0.0...0.5 => SlabType::Bottom,
+                0.0..0.5 => SlabType::Bottom,
                 _ => SlabType::Top,
             },
         };
@@ -41,7 +39,7 @@ impl BlockBehaviour for SlabBlock {
         slab_props.to_state_id(args.block)
     }
 
-    async fn can_update_at(&self, args: CanUpdateAtArgs<'_>) -> bool {
+    fn can_update_at(&self, args: CanUpdateAtArgs<'_>) -> bool {
         let slab_props = SlabProperties::from_state_id(args.state_id, args.block);
 
         slab_props.r#type
@@ -49,7 +47,7 @@ impl BlockBehaviour for SlabBlock {
                 BlockDirection::Up => SlabType::Bottom,
                 BlockDirection::Down => SlabType::Top,
                 _ => match args.use_item_on.cursor_pos.y {
-                    0.0...0.5 => SlabType::Top,
+                    0.0..0.5 => SlabType::Top,
                     _ => SlabType::Bottom,
                 },
             }

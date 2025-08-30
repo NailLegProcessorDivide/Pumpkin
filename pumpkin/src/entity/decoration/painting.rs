@@ -2,7 +2,7 @@ use core::f32;
 use std::sync::{Arc, atomic::Ordering};
 
 use crate::entity::{Entity, EntityBase, NBTStorage, living::LivingEntity};
-use async_trait::async_trait;
+
 use pumpkin_data::damage::DamageType;
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_util::math::vector3::Vector3;
@@ -17,19 +17,19 @@ impl PaintingEntity {
     }
 }
 
-#[async_trait]
+
 impl NBTStorage for PaintingEntity {
-    async fn write_nbt(&self, nbt: &mut NbtCompound) {
+    fn write_nbt(&self, nbt: &mut NbtCompound) {
         nbt.put_byte("facing", self.entity.data.load(Ordering::Relaxed) as i8);
     }
 
-    async fn read_nbt_non_mut(&self, _nbt: &NbtCompound) {
+    fn read_nbt_non_mut(&self, _nbt: &NbtCompound) {
         // TODO
         self.entity.data.store(3, Ordering::Relaxed);
     }
 }
 
-#[async_trait]
+
 impl EntityBase for PaintingEntity {
     fn get_entity(&self) -> &Entity {
         &self.entity
@@ -39,7 +39,7 @@ impl EntityBase for PaintingEntity {
         None
     }
 
-    async fn damage_with_context(
+    fn damage_with_context(
         &self,
         _caller: Arc<dyn EntityBase>,
         _amount: f32,
@@ -49,7 +49,7 @@ impl EntityBase for PaintingEntity {
         _cause: Option<&dyn EntityBase>,
     ) -> bool {
         // TODO
-        self.entity.remove().await;
+        self.entity.remove();
         true
     }
 

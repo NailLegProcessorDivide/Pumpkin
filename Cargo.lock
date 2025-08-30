@@ -125,10 +125,12 @@ checksum = "e16d2d3311acee920a9eb8d33b8cbc1787ce4a264e85f964c2404b969bdcd487"
 
 [[package]]
 name = "async-compression"
-version = "0.4.27"
+version = "0.4.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ddb939d66e4ae03cee6091612804ba446b12878410cfa17f785f4dd67d4014e8"
+checksum = "6448dfb3960f0b038e88c781ead1e7eb7929dfc3a71a1336ec9086c00f6d1e75"
 dependencies = [
+ "compression-codecs",
+ "compression-core",
  "flate2",
  "futures-core",
  "memchr",
@@ -419,8 +421,27 @@ version = "3.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fde0e0ec90c9dfb3b4b1a0891a7dcd0e2bffde2f7efed5fe7c9bb00e5bfb915e"
 dependencies = [
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
+
+[[package]]
+name = "compression-codecs"
+version = "0.4.28"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "46cc6539bf1c592cff488b9f253b30bc0ec50d15407c2cf45e27bd8f308d5905"
+dependencies = [
+ "compression-core",
+ "flate2",
+ "futures-core",
+ "memchr",
+ "pin-project-lite",
+]
+
+[[package]]
+name = "compression-core"
+version = "0.4.28"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2957e823c15bde7ecf1e8b64e537aa03a6be5fda0e2334e99887669e75b12e01"
 
 [[package]]
 name = "console-api"
@@ -570,7 +591,6 @@ dependencies = [
  "serde",
  "serde_json",
  "tinytemplate",
- "tokio",
  "walkdir",
 ]
 
@@ -895,7 +915,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "778e2ac28f6c47af28e4907f13ffd1e1ddbd400980a9abd7c8df189bf578a5ad"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -2029,6 +2049,7 @@ dependencies = [
  "bytes",
  "console-subscriber",
  "crossbeam",
+ "dashmap",
  "dhat",
  "flate2",
  "futures",
@@ -2036,6 +2057,7 @@ dependencies = [
  "libloading",
  "log",
  "num-bigint",
+ "parking_lot",
  "pumpkin-config",
  "pumpkin-data",
  "pumpkin-inventory",
@@ -2108,15 +2130,14 @@ dependencies = [
 name = "pumpkin-inventory"
 version = "0.1.0-dev+1.21.8"
 dependencies = [
- "async-trait",
  "crossbeam-utils",
  "log",
+ "parking_lot",
  "pumpkin-data",
  "pumpkin-protocol",
  "pumpkin-util",
  "pumpkin-world",
  "thiserror",
- "tokio",
 ]
 
 [[package]]
@@ -2185,13 +2206,13 @@ dependencies = [
  "md5",
  "num-derive",
  "num-traits",
+ "parking_lot",
  "proc-macro2",
  "pumpkin-nbt",
  "quote",
  "serde",
  "serde_json",
  "syn",
- "tokio",
  "uuid",
 ]
 
@@ -2199,7 +2220,6 @@ dependencies = [
 name = "pumpkin-world"
 version = "0.1.0-dev+1.21.8"
 dependencies = [
- "async-trait",
  "bitflags",
  "bytes",
  "criterion",
@@ -2217,6 +2237,8 @@ dependencies = [
  "num-derive",
  "num-traits",
  "num_cpus",
+ "once_cell",
+ "parking_lot",
  "pumpkin-config",
  "pumpkin-data",
  "pumpkin-nbt",
@@ -2231,8 +2253,6 @@ dependencies = [
  "temp-dir",
  "thiserror",
  "thread_local",
- "tokio",
- "tokio-util",
  "uuid",
 ]
 
@@ -2454,7 +2474,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -2841,7 +2861,7 @@ dependencies = [
  "fastrand",
  "once_cell",
  "rustix",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -3437,7 +3457,7 @@ version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf221c93e13a30d793f7645a0e7762c55d169dbb0a49671918a2319d289b10bb"
 dependencies = [
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

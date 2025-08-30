@@ -5,7 +5,7 @@ use crate::command::args::{
 use crate::command::dispatcher::CommandError;
 use crate::command::tree::RawArgs;
 use crate::server::Server;
-use async_trait::async_trait;
+
 use pumpkin_data::sound::SoundCategory;
 use pumpkin_protocol::java::client::play::{ArgumentType, CommandSuggestion, SuggestionProviders};
 
@@ -24,9 +24,9 @@ impl GetClientSideArgParser for SoundCategoryArgumentConsumer {
     }
 }
 
-#[async_trait]
+
 impl ArgumentConsumer for SoundCategoryArgumentConsumer {
-    async fn consume<'a>(
+    fn consume<'a>(
         &'a self,
         _sender: &CommandSender,
         _server: &'a Server,
@@ -54,7 +54,7 @@ impl ArgumentConsumer for SoundCategoryArgumentConsumer {
         category.map(Arg::SoundCategory) // Simplified by removing redundant closure
     }
 
-    async fn suggest<'a>(
+    fn suggest<'a>(
         &'a self,
         _sender: &CommandSender,
         _server: &'a Server,

@@ -1,7 +1,7 @@
 use crate::block::blocks::redstone::block_receives_redstone_power;
 use crate::block::{BlockBehaviour, BlockMetadata, OnNeighborUpdateArgs, OnPlaceArgs};
 use crate::entity::EntityBase;
-use async_trait::async_trait;
+
 use pumpkin_data::block_properties::BlockProperties;
 use pumpkin_world::BlockStateId;
 use pumpkin_world::world::BlockFlags;
@@ -28,28 +28,25 @@ impl BlockMetadata for SkullBlock {
     }
 }
 
-#[async_trait]
 impl BlockBehaviour for SkullBlock {
-    async fn on_place(&self, args: OnPlaceArgs<'_>) -> BlockStateId {
+    fn on_place(&self, args: OnPlaceArgs<'_>) -> BlockStateId {
         let mut props = SkeletonSkullLikeProperties::default(args.block);
         props.rotation = args.player.get_entity().get_rotation_16();
-        props.powered = block_receives_redstone_power(args.world, args.position).await;
+        props.powered = block_receives_redstone_power(args.world, args.position);
         props.to_state_id(args.block)
     }
 
-    async fn on_neighbor_update(&self, args: OnNeighborUpdateArgs<'_>) {
-        let state = args.world.get_block_state(args.position).await;
+    fn on_neighbor_update(&self, args: OnNeighborUpdateArgs<'_>) {
+        let state = args.world.get_block_state(args.position);
         let mut props = SkeletonSkullLikeProperties::from_state_id(state.id, args.block);
-        let is_receiving_power = block_receives_redstone_power(args.world, args.position).await;
+        let is_receiving_power = block_receives_redstone_power(args.world, args.position);
         if props.powered != is_receiving_power {
             props.powered = is_receiving_power;
-            args.world
-                .set_block_state(
-                    args.position,
-                    props.to_state_id(args.block),
-                    BlockFlags::NOTIFY_LISTENERS,
-                )
-                .await;
+            args.world.set_block_state(
+                args.position,
+                props.to_state_id(args.block),
+                BlockFlags::NOTIFY_LISTENERS,
+            );
         }
     }
 }

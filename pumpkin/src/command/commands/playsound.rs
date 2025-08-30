@@ -1,4 +1,3 @@
-use async_trait::async_trait;
 use pumpkin_data::sound::SoundCategory;
 use pumpkin_util::text::TextComponent;
 use rand::{Rng, rng};
@@ -60,9 +59,9 @@ fn min_volume_consumer() -> BoundedNumArgumentConsumer<f32> {
 
 struct Executor;
 
-#[async_trait]
+
 impl CommandExecutor for Executor {
-    async fn execute<'a>(
+    fn execute<'a>(
         &self,
         sender: &mut CommandSender,
         _server: &crate::server::Server,
@@ -125,40 +124,32 @@ impl CommandExecutor for Executor {
             let max_distance: f64 = (16.0 * volume).into(); // 16 blocks is base distance at volume 1.0
 
             if distance <= max_distance || min_volume > 0.0 {
-                target
-                    .play_sound(sound as u16, source, &pos, volume, pitch, seed)
-                    .await;
+                target.play_sound(sound as u16, source, &pos, volume, pitch, seed);
                 players_who_heard += 1;
             }
         }
 
         // Send appropriate message based on results
         if players_who_heard == 0 {
-            sender
-                .send_message(TextComponent::translate("commands.playsound.failed", []))
-                .await;
+            sender.send_message(TextComponent::translate("commands.playsound.failed", []));
         } else {
             let sound_name = sound.to_name();
             if players_who_heard == 1 {
-                sender
-                    .send_message(TextComponent::translate(
-                        "commands.playsound.success.single",
-                        [
-                            TextComponent::text(sound_name),
-                            targets[0].get_display_name().await,
-                        ],
-                    ))
-                    .await;
+                sender.send_message(TextComponent::translate(
+                    "commands.playsound.success.single",
+                    [
+                        TextComponent::text(sound_name),
+                        targets[0].get_display_name(),
+                    ],
+                ));
             } else {
-                sender
-                    .send_message(TextComponent::translate(
-                        "commands.playsound.success.multiple",
-                        [
-                            TextComponent::text(sound_name),
-                            TextComponent::text(players_who_heard.to_string()),
-                        ],
-                    ))
-                    .await;
+                sender.send_message(TextComponent::translate(
+                    "commands.playsound.success.multiple",
+                    [
+                        TextComponent::text(sound_name),
+                        TextComponent::text(players_who_heard.to_string()),
+                    ],
+                ));
             }
         }
 

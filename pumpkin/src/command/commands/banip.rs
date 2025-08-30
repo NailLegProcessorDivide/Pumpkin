@@ -13,7 +13,7 @@ use crate::{
     server::Server,
 };
 use CommandError::InvalidConsumption;
-use async_trait::async_trait;
+
 use pumpkin_util::text::TextComponent;
 
 const NAMES: [&str; 1] = ["ban-ip"];
@@ -22,24 +22,18 @@ const DESCRIPTION: &str = "bans a player-ip";
 const ARG_TARGET: &str = "ip";
 const ARG_REASON: &str = "reason";
 
-async fn parse_ip(target: &str, server: &Server) -> Option<IpAddr> {
+fn parse_ip(target: &str, server: &Server) -> Option<IpAddr> {
     Some(match IpAddr::from_str(target) {
         Ok(ip) => ip,
-        Err(_) => server
-            .get_player_by_name(target)
-            .await?
-            .client
-            .address()
-            .await
-            .ip(),
+        Err(_) => server.get_player_by_name(target)?.client.address().ip(),
     })
 }
 
 struct NoReasonExecutor;
 
-#[async_trait]
+
 impl CommandExecutor for NoReasonExecutor {
-    async fn execute<'a>(
+    fn execute<'a>(
         &self,
         sender: &mut CommandSender,
         server: &crate::server::Server,
@@ -49,16 +43,16 @@ impl CommandExecutor for NoReasonExecutor {
             return Err(InvalidConsumption(Some(ARG_TARGET.into())));
         };
 
-        ban_ip(sender, server, target, None).await;
+        ban_ip(sender, server, target, None);
         Ok(())
     }
 }
 
 struct ReasonExecutor;
 
-#[async_trait]
+
 impl CommandExecutor for ReasonExecutor {
-    async fn execute<'a>(
+    fn execute<'a>(
         &self,
         sender: &mut CommandSender,
         server: &crate::server::Server,
@@ -72,27 +66,23 @@ impl CommandExecutor for ReasonExecutor {
             return Err(InvalidConsumption(Some(ARG_REASON.into())));
         };
 
-        ban_ip(sender, server, target, Some(reason.clone())).await;
+        ban_ip(sender, server, target, Some(reason.clone()));
         Ok(())
     }
 }
 
-async fn ban_ip(sender: &CommandSender, server: &Server, target: &str, reason: Option<String>) {
+fn ban_ip(sender: &CommandSender, server: &Server, target: &str, reason: Option<String>) {
     let reason = reason.unwrap_or_else(|| "Banned by an operator.".to_string());
 
-    let Some(target_ip) = parse_ip(target, server).await else {
-        sender
-            .send_message(TextComponent::translate("commands.banip.invalid", []))
-            .await;
+    let Some(target_ip) = parse_ip(target, server) else {
+        sender.send_message(TextComponent::translate("commands.banip.invalid", []));
         return;
     };
 
-    let mut banned_ips = BANNED_IP_LIST.write().await;
+    let mut banned_ips = BANNED_IP_LIST.write();
 
     if banned_ips.get_entry(&target_ip).is_some() {
-        sender
-            .send_message(TextComponent::translate("commands.banip.failed", []))
-            .await;
+        sender.send_message(TextComponent::translate("commands.banip.failed", []));
         return;
     }
 
@@ -107,40 +97,34 @@ async fn ban_ip(sender: &CommandSender, server: &Server, target: &str, reason: O
     drop(banned_ips);
 
     // Send messages
-    let affected = server.get_players_by_ip(target_ip).await;
+    let affected = server.get_players_by_ip(target_ip);
     let names = affected
         .iter()
         .map(|p| p.gameprofile.name.clone())
         .collect::<Vec<_>>()
         .join(" ");
 
-    sender
-        .send_message(TextComponent::translate(
-            "commands.banip.success",
-            [
-                TextComponent::text(target_ip.to_string()),
-                TextComponent::text(reason),
-            ],
-        ))
-        .await;
+    sender.send_message(TextComponent::translate(
+        "commands.banip.success",
+        [
+            TextComponent::text(target_ip.to_string()),
+            TextComponent::text(reason),
+        ],
+    ));
 
-    sender
-        .send_message(TextComponent::translate(
-            "commands.banip.info",
-            [
-                TextComponent::text(affected.len().to_string()),
-                TextComponent::text(names),
-            ],
-        ))
-        .await;
+    sender.send_message(TextComponent::translate(
+        "commands.banip.info",
+        [
+            TextComponent::text(affected.len().to_string()),
+            TextComponent::text(names),
+        ],
+    ));
 
     for target in affected {
-        target
-            .kick(
-                DisconnectReason::Kicked,
-                TextComponent::translate("multiplayer.disconnect.ip_banned", []),
-            )
-            .await;
+        target.kick(
+            DisconnectReason::Kicked,
+            TextComponent::translate("multiplayer.disconnect.ip_banned", []),
+        );
     }
 }
 

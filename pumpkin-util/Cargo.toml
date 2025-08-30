@@ -20,4 +20,4 @@ proc-macro2 = "1.0"
 enum_dispatch = "0.3.13"
 
 uuid.workspace = true
-tokio.workspace = true
+parking_lot.workspace = true

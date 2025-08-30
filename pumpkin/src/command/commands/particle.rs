@@ -1,4 +1,3 @@
-use async_trait::async_trait;
 use pumpkin_util::{math::vector3::Vector3, text::TextComponent};
 
 use crate::command::{
@@ -22,9 +21,9 @@ const ARG_COUNT: &str = "count";
 
 struct Executor;
 
-#[async_trait]
+
 impl CommandExecutor for Executor {
-    async fn execute<'a>(
+    fn execute<'a>(
         &self,
         sender: &mut CommandSender,
         server: &crate::server::Server,
@@ -42,14 +41,14 @@ impl CommandExecutor for Executor {
         let count = count.unwrap_or(Ok(0))?;
         let (world, pos) = match sender {
             CommandSender::Console | CommandSender::Rcon(_) => {
-                let guard = server.worlds.read().await;
+                let guard = server.worlds.read();
                 let world = guard
                     .first()
                     .cloned()
                     .ok_or(CommandError::InvalidRequirement)?;
                 // default position for spawning a player, in this case for particle
                 let pos = {
-                    let info = &world.level_info.read().await;
+                    let info = &world.level_info.read();
                     // default position for spawning a player, in this case for mob
                     pos.unwrap_or(Vector3::new(
                         f64::from(info.spawn_x) + 0.5,
@@ -67,16 +66,12 @@ impl CommandExecutor for Executor {
             }
         };
 
-        world
-            .spawn_particle(pos, delta, speed, count, *particle)
-            .await;
+        world.spawn_particle(pos, delta, speed, count, *particle);
 
-        sender
-            .send_message(TextComponent::translate(
-                "commands.particle.success",
-                [TextComponent::text(format!("{particle:?}"))],
-            ))
-            .await;
+        sender.send_message(TextComponent::translate(
+            "commands.particle.success",
+            [TextComponent::text(format!("{particle:?}"))],
+        ));
 
         Ok(())
     }

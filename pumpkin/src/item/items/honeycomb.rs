@@ -6,7 +6,7 @@ use crate::block::registry::BlockActionResult;
 use crate::entity::player::Player;
 use crate::item::{ItemBehaviour, ItemMetadata};
 use crate::server::Server;
-use async_trait::async_trait;
+
 use pumpkin_data::BlockDirection;
 use pumpkin_data::block_properties::BlockProperties;
 use pumpkin_data::block_properties::OakDoorLikeProperties;
@@ -28,9 +28,9 @@ impl ItemMetadata for HoneyCombItem {
     }
 }
 
-#[async_trait]
+
 impl ItemBehaviour for HoneyCombItem {
-    async fn use_on_block(
+    fn use_on_block(
         &self,
         _item: &mut ItemStack,
         player: &Player,
@@ -54,7 +54,7 @@ impl ItemBehaviour for HoneyCombItem {
                 && block.is_tagged_with_by_tag(&tag::Block::MINECRAFT_DOORS)
             {
                 // get block state of the old log.
-                let door_information = world.get_block_state_id(&location).await;
+                let door_information = world.get_block_state_id(&location);
                 // get the log properties
                 let door_props = OakDoorLikeProperties::from_state_id(door_information, block);
                 // create new properties for the new log.
@@ -73,7 +73,7 @@ impl ItemBehaviour for HoneyCombItem {
             // TODO Implements trapdoors
             world
                 .set_block_state(&location, new_state_id, BlockFlags::NOTIFY_ALL)
-                .await;
+                ;
             return;
         }
     }
@@ -84,7 +84,7 @@ impl ItemBehaviour for HoneyCombItem {
 }
 
 impl HoneyCombItem {
-    pub async fn apply_to_sign(
+    pub fn apply_to_sign(
         &self,
         args: &UseWithItemArgs<'_>,
         block_entity: &Arc<dyn BlockEntity>,
@@ -92,10 +92,10 @@ impl HoneyCombItem {
     ) -> BlockActionResult {
         sign_entity.is_waxed.store(true, Ordering::Relaxed);
 
-        args.world.update_block_entity(block_entity).await;
+        args.world.update_block_entity(block_entity);
         args.world
             .sync_world_event(WorldEvent::BlockWaxed, *args.position, 0)
-            .await;
+            ;
 
         BlockActionResult::Success
     }

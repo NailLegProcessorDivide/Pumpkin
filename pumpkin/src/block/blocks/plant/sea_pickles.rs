@@ -6,7 +6,7 @@ use crate::block::{
     UseWithItemArgs,
 };
 use crate::entity::EntityBase;
-use async_trait::async_trait;
+
 use pumpkin_data::block_properties::{BlockProperties, Integer1To4};
 use pumpkin_data::entity::EntityPose;
 use pumpkin_data::item::Item;
@@ -23,18 +23,16 @@ type SeaPickleProperties = pumpkin_data::block_properties::SeaPickleLikeProperti
 #[pumpkin_block("minecraft:sea_pickle")]
 pub struct SeaPickleBlock;
 
-#[async_trait]
 impl BlockBehaviour for SeaPickleBlock {
     #[allow(clippy::many_single_char_names)]
-    async fn use_with_item(&self, args: UseWithItemArgs<'_>) -> BlockActionResult {
-        if args.item_stack.lock().await.item != &Item::BONE_MEAL
+    fn use_with_item(&self, args: UseWithItemArgs<'_>) -> BlockActionResult {
+        if args.item_stack.lock().item != &Item::BONE_MEAL
             || !args
                 .world
                 .get_block(&args.position.down())
-                .await
                 .is_tagged_with_by_tag(&tag::Block::MINECRAFT_CORAL_BLOCKS)
             || !SeaPickleProperties::from_state_id(
-                args.world.get_block_state_id(args.position).await,
+                args.world.get_block_state_id(args.position),
                 args.block,
             )
             .waterlogged
@@ -58,11 +56,10 @@ impl BlockBehaviour for SeaPickleBlock {
                         BlockPos::new(base_x + added_x, y, args.position.0.z - removed_z + added_z);
                     if &lv == args.position
                         || rand::rng().random_range(0..6) != 0
-                        || !args.world.get_block(&lv).await.eq(&Block::WATER)
+                        || !args.world.get_block(&lv).eq(&Block::WATER)
                         || !args
                             .world
                             .get_block(&lv.down())
-                            .await
                             .is_tagged_with_by_tag(&tag::Block::MINECRAFT_CORAL_BLOCKS)
                     {
                         continue;
@@ -75,13 +72,11 @@ impl BlockBehaviour for SeaPickleBlock {
                         3 => Integer1To4::L3,
                         _ => Integer1To4::L4,
                     };
-                    args.world
-                        .set_block_state(
-                            &lv,
-                            sea_pickle_prop.to_state_id(args.block),
-                            BlockFlags::NOTIFY_ALL,
-                        )
-                        .await;
+                    args.world.set_block_state(
+                        &lv,
+                        sea_pickle_prop.to_state_id(args.block),
+                        BlockFlags::NOTIFY_ALL,
+                    );
                 }
             }
             if count < 2 {
@@ -95,18 +90,16 @@ impl BlockBehaviour for SeaPickleBlock {
         }
         let mut sea_pickle_prop = SeaPickleProperties::default(args.block);
         sea_pickle_prop.pickles = Integer1To4::L4;
-        args.world
-            .set_block_state(
-                args.position,
-                sea_pickle_prop.to_state_id(args.block),
-                BlockFlags::NOTIFY_LISTENERS,
-            )
-            .await;
+        args.world.set_block_state(
+            args.position,
+            sea_pickle_prop.to_state_id(args.block),
+            BlockFlags::NOTIFY_LISTENERS,
+        );
 
         BlockActionResult::Consume
     }
 
-    async fn on_place(&self, args: OnPlaceArgs<'_>) -> BlockStateId {
+    fn on_place(&self, args: OnPlaceArgs<'_>) -> BlockStateId {
         if args.player.get_entity().pose.load() != EntityPose::Crouching
             && let BlockIsReplacing::Itself(state_id) = args.replacing
         {
@@ -126,21 +119,18 @@ impl BlockBehaviour for SeaPickleBlock {
         sea_pickle_prop.to_state_id(args.block)
     }
 
-    async fn can_place_at(&self, args: CanPlaceAtArgs<'_>) -> bool {
-        let support_block = args
-            .block_accessor
-            .get_block_state(&args.position.down())
-            .await;
+    fn can_place_at(&self, args: CanPlaceAtArgs<'_>) -> bool {
+        let support_block = args.block_accessor.get_block_state(&args.position.down());
         support_block.is_center_solid(BlockDirection::Up)
     }
 
-    async fn can_update_at(&self, args: CanUpdateAtArgs<'_>) -> bool {
+    fn can_update_at(&self, args: CanUpdateAtArgs<'_>) -> bool {
         args.player.get_entity().pose.load() != EntityPose::Crouching
             && SeaPickleProperties::from_state_id(args.state_id, args.block).pickles
                 != Integer1To4::L4
     }
 
-    async fn get_state_for_neighbor_update(
+    fn get_state_for_neighbor_update(
         &self,
         args: GetStateForNeighborUpdateArgs<'_>,
     ) -> BlockStateId {
@@ -150,7 +140,6 @@ impl BlockBehaviour for SeaPickleBlock {
             args.position,
             args.state_id,
         )
-        .await
     }
 }
 

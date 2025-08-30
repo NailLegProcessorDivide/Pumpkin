@@ -1,5 +1,3 @@
-use async_trait::async_trait;
-
 use crate::command::args::GetCloned;
 use crate::command::args::gamemode::GamemodeArgumentConsumer;
 
@@ -26,9 +24,9 @@ const ARG_TARGET: &str = "target";
 
 struct TargetSelfExecutor;
 
-#[async_trait]
+
 impl CommandExecutor for TargetSelfExecutor {
-    async fn execute<'a>(
+    fn execute<'a>(
         &self,
         sender: &mut CommandSender,
         _server: &Server,
@@ -40,15 +38,13 @@ impl CommandExecutor for TargetSelfExecutor {
 
         if let Player(target) = sender {
             if target.gamemode.load() != gamemode {
-                target.set_gamemode(gamemode).await;
+                target.set_gamemode(gamemode);
                 let gamemode_string = format!("{gamemode:?}").to_lowercase();
                 let gamemode_string = format!("gameMode.{gamemode_string}");
-                target
-                    .send_system_message(&TextComponent::translate(
-                        "commands.gamemode.success.self",
-                        [TextComponent::translate(gamemode_string, [])],
-                    ))
-                    .await;
+                target.send_system_message(&TextComponent::translate(
+                    "commands.gamemode.success.self",
+                    [TextComponent::translate(gamemode_string, [])],
+                ));
             }
             Ok(())
         } else {
@@ -59,9 +55,9 @@ impl CommandExecutor for TargetSelfExecutor {
 
 struct TargetPlayerExecutor;
 
-#[async_trait]
+
 impl CommandExecutor for TargetPlayerExecutor {
-    async fn execute<'a>(
+    fn execute<'a>(
         &self,
         sender: &mut CommandSender,
         _server: &Server,
@@ -78,25 +74,21 @@ impl CommandExecutor for TargetPlayerExecutor {
 
         for target in targets {
             if target.gamemode.load() != gamemode {
-                target.set_gamemode(gamemode).await;
+                target.set_gamemode(gamemode);
                 let gamemode_string = format!("{gamemode:?}").to_lowercase();
                 let gamemode_string = format!("gameMode.{gamemode_string}");
-                target
-                    .send_system_message(&TextComponent::translate(
-                        "gameMode.changed",
-                        [TextComponent::translate(gamemode_string.clone(), [])],
-                    ))
-                    .await;
+                target.send_system_message(&TextComponent::translate(
+                    "gameMode.changed",
+                    [TextComponent::translate(gamemode_string.clone(), [])],
+                ));
                 if target_count == 1 {
-                    sender
-                        .send_message(TextComponent::translate(
-                            "commands.gamemode.success.other",
-                            [
-                                target.get_display_name().await,
-                                TextComponent::translate(gamemode_string, []),
-                            ],
-                        ))
-                        .await;
+                    sender.send_message(TextComponent::translate(
+                        "commands.gamemode.success.other",
+                        [
+                            target.get_display_name(),
+                            TextComponent::translate(gamemode_string, []),
+                        ],
+                    ));
                 }
             }
         }

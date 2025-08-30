@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use async_trait::async_trait;
+
 use pumpkin_protocol::java::client::play::{ArgumentType, CommandSuggestion, SuggestionProviders};
 use pumpkin_util::GameMode;
 
@@ -23,9 +23,9 @@ impl GetClientSideArgParser for GamemodeArgumentConsumer {
     }
 }
 
-#[async_trait]
+
 impl ArgumentConsumer for GamemodeArgumentConsumer {
-    async fn consume<'a>(
+    fn consume<'a>(
         &'a self,
         _sender: &CommandSender,
         _server: &'a Server,
@@ -42,7 +42,7 @@ impl ArgumentConsumer for GamemodeArgumentConsumer {
         GameMode::from_str(s).map_or_else(|_| None, |gamemode| Some(Arg::GameMode(gamemode)))
     }
 
-    async fn suggest<'a>(
+    fn suggest<'a>(
         &'a self,
         _sender: &CommandSender,
         _server: &'a Server,

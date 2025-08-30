@@ -1,6 +1,6 @@
 use crate::block::blocks::redstone::block_receives_redstone_power;
 use crate::block::{BlockBehaviour, BlockMetadata, OnNeighborUpdateArgs, OnPlaceArgs};
-use async_trait::async_trait;
+
 use pumpkin_data::block_properties::BlockProperties;
 use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_world::BlockStateId;
@@ -29,11 +29,11 @@ impl BlockMetadata for CopperBulbBlock {
     }
 }
 
-#[async_trait]
+
 impl BlockBehaviour for CopperBulbBlock {
-    async fn on_place(&self, args: OnPlaceArgs<'_>) -> BlockStateId {
+    fn on_place(&self, args: OnPlaceArgs<'_>) -> BlockStateId {
         let mut props = CopperBulbLikeProperties::default(args.block);
-        let is_receiving_power = block_receives_redstone_power(args.world, args.position).await;
+        let is_receiving_power = block_receives_redstone_power(args.world, args.position);
         if is_receiving_power {
             props.lit = true;
             args.world
@@ -42,16 +42,16 @@ impl BlockBehaviour for CopperBulbBlock {
                     SoundCategory::Blocks,
                     *args.position,
                 )
-                .await;
+                ;
             props.powered = true;
         }
         props.to_state_id(args.block)
     }
 
-    async fn on_neighbor_update(&self, args: OnNeighborUpdateArgs<'_>) {
-        let state = args.world.get_block_state(args.position).await;
+    fn on_neighbor_update(&self, args: OnNeighborUpdateArgs<'_>) {
+        let state = args.world.get_block_state(args.position);
         let mut props = CopperBulbLikeProperties::from_state_id(state.id, args.block);
-        let is_receiving_power = block_receives_redstone_power(args.world, args.position).await;
+        let is_receiving_power = block_receives_redstone_power(args.world, args.position);
         if props.powered != is_receiving_power {
             if !props.powered {
                 props.lit = !props.lit;
@@ -65,7 +65,7 @@ impl BlockBehaviour for CopperBulbBlock {
                         SoundCategory::Blocks,
                         *args.position,
                     )
-                    .await;
+                    ;
             }
             props.powered = is_receiving_power;
             args.world
@@ -74,7 +74,7 @@ impl BlockBehaviour for CopperBulbBlock {
                     props.to_state_id(args.block),
                     BlockFlags::NOTIFY_ALL,
                 )
-                .await;
+                ;
         }
     }
 }

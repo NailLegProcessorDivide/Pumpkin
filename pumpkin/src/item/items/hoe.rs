@@ -3,7 +3,7 @@ use crate::entity::item::ItemEntity;
 use crate::entity::player::Player;
 use crate::item::{ItemBehaviour, ItemMetadata};
 use crate::server::Server;
-use async_trait::async_trait;
+
 use pumpkin_data::BlockDirection;
 use pumpkin_data::entity::EntityType;
 use pumpkin_data::item::Item;
@@ -22,9 +22,8 @@ impl ItemMetadata for HoeItem {
     }
 }
 
-#[async_trait]
 impl ItemBehaviour for HoeItem {
-    async fn use_on_block(
+    fn use_on_block(
         &self,
         _item: &mut ItemStack,
         player: &Player,
@@ -53,7 +52,7 @@ impl ItemBehaviour for HoeItem {
                 if (block == &Block::GRASS_BLOCK
                     || block == &Block::DIRT_PATH
                     || block == &Block::DIRT)
-                    && world.get_block_state(&location.up()).await.is_air()
+                    && world.get_block_state(&location.up()).is_air()
                 {
                     future_block = &Block::FARMLAND;
                 }
@@ -63,13 +62,11 @@ impl ItemBehaviour for HoeItem {
                 }
             }
 
-            world
-                .set_block_state(
-                    &location,
-                    future_block.default_state.id,
-                    BlockFlags::NOTIFY_ALL,
-                )
-                .await;
+            world.set_block_state(
+                &location,
+                future_block.default_state.id,
+                BlockFlags::NOTIFY_ALL,
+            );
 
             //Also rooted_dirt drop a hanging_root
             if block == &Block::ROOTED_DIRT {
@@ -89,10 +86,11 @@ impl ItemBehaviour for HoeItem {
                     false,
                 );
                 // TODO: Merge stacks together
-                let item_entity = Arc::new(
-                    ItemEntity::new(entity, ItemStack::new(1, &Item::HANGING_ROOTS)).await,
-                );
-                world.spawn_entity(item_entity).await;
+                let item_entity = Arc::new(ItemEntity::new(
+                    entity,
+                    ItemStack::new(1, &Item::HANGING_ROOTS),
+                ));
+                world.spawn_entity(item_entity);
             }
         }
     }

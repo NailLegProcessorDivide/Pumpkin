@@ -1,10 +1,12 @@
+use std::error::Error;
+use std::fmt::Display;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::{io::Write, sync::Arc};
 
 use bytes::Bytes;
-use crossbeam::atomic::AtomicCell;
 use pumpkin_config::networking::compression::CompressionInfo;
+use pumpkin_protocol::PacketEncodeError;
 use pumpkin_protocol::java::server::play::{
     SChangeGameMode, SChatCommand, SChatMessage, SChunkBatch, SClickSlot, SClientCommand,
     SClientInformationPlay, SClientTickEnd, SCloseContainer, SCommandSuggestion, SConfirmTeleport,
@@ -59,26 +61,44 @@ pub mod play;
 pub mod status;
 
 use crate::entity::player::Player;
+use crate::net::key_store::KeyStore;
+use crate::net::net_thread::{ClientHandle, ClientServerEvent};
+use crate::net::proxy::bungeecord::BungeeCordError;
+use crate::net::proxy::velocity::VelocityError;
 use crate::net::{GameProfile, PlayerConfig};
 use crate::{error::PumpkinError, net::EncryptionError, server::Server};
+
+type NetEncoder = TCPNetworkEncoder<BufWriter<OwnedWriteHalf>>;
+type NetDecoder = TCPNetworkDecoder<BufReader<OwnedReadHalf>>;
+
+pub struct LoginClient {
+    pub id: u64,
+    /// The packet encoder for outgoing packets.
+    pub network_writer: NetEncoder,
+    /// The packet decoder for incoming packets.
+    pub network_reader: NetDecoder,
+    pub address: SocketAddr,
+    pub server_address: String,
+    pub key_store: Arc<KeyStore>,
+}
 
 pub struct JavaClient {
     pub id: u64,
     /// The client's game profile information.
-    pub gameprofile: Mutex<Option<GameProfile>>,
+    pub gameprofile: Mutex<GameProfile>,
     /// The client's configuration settings, Optional
     pub config: Mutex<Option<PlayerConfig>>,
     /// The Address used to connect to the Server, Send in the Handshake
     pub server_address: Mutex<String>,
+    server_conn: ClientHandle,
     /// The current connection state of the client (e.g., Handshaking, Status, Play).
-    pub connection_state: AtomicCell<ConnectionState>,
+    pub connection_state: ConnectionState,
     /// Indicates if the client connection is closed.
     pub closed: Arc<AtomicBool>,
     /// The client's IP address.
     pub address: Mutex<SocketAddr>,
     /// The client's brand or modpack information, Optional.
-    pub brand: Mutex<Option<String>>,
-    pub player: Mutex<Option<Arc<Player>>>,
+    pub brand: Mutex<String>,
     /// A collection of tasks associated with this client. The tasks await completion when removing the client.
     tasks: TaskTracker,
     /// An notifier that is triggered when this client is closed.
@@ -88,91 +108,94 @@ pub struct JavaClient {
     /// A queue of serialized packets to send to the network
     outgoing_packet_queue_recv: Option<Receiver<Bytes>>,
     /// The packet encoder for outgoing packets.
-    network_writer: Arc<Mutex<TCPNetworkEncoder<BufWriter<OwnedWriteHalf>>>>,
+    network_writer: NetEncoder,
     /// The packet decoder for incoming packets.
-    network_reader: Mutex<TCPNetworkDecoder<BufReader<OwnedReadHalf>>>,
+    network_reader: NetDecoder,
+    key_store: Arc<KeyStore>,
 }
 
 impl JavaClient {
     #[must_use]
-    pub fn new(tcp_stream: TcpStream, address: SocketAddr, id: u64) -> Self {
+    pub async fn new(
+        tcp_stream: TcpStream,
+        address: SocketAddr,
+        id: u64,
+        server_conn: ClientHandle,
+        key_store: Arc<KeyStore>,
+    ) -> Self {
         let (read, write) = tcp_stream.into_split();
         let (send, recv) = tokio::sync::mpsc::channel(128);
+
+        let mut network_writer = TCPNetworkEncoder::new(BufWriter::new(write));
+        let mut network_reader = TCPNetworkDecoder::new(BufReader::new(read));
+
+        let login_client = LoginClient {
+            id,
+            network_writer,
+            network_reader,
+            address,
+            server_address: "".into(),
+            key_store,
+        };
+
+        let login_details = login_client.process_login().await;
+
         Self {
             id,
             gameprofile: Mutex::new(None),
             config: Mutex::new(None),
             server_address: Mutex::new(String::new()),
+            server_conn,
             address: Mutex::new(address),
-            connection_state: AtomicCell::new(ConnectionState::HandShake),
+            connection_state: ConnectionState::HandShake,
             closed: Arc::new(AtomicBool::new(false)),
             close_interrupt: Arc::new(Notify::new()),
             tasks: TaskTracker::new(),
             outgoing_packet_queue_send: send,
             outgoing_packet_queue_recv: Some(recv),
 
-            network_writer: Arc::new(Mutex::new(TCPNetworkEncoder::new(BufWriter::new(write)))),
-            network_reader: Mutex::new(TCPNetworkDecoder::new(BufReader::new(read))),
+            network_writer,
+            network_reader,
             brand: Mutex::new(None),
-            player: Mutex::new(None),
+            key_store,
         }
     }
-    pub async fn set_encryption(
-        &self,
-        shared_secret: &[u8], // decrypted
-    ) -> Result<(), EncryptionError> {
-        let crypt_key: [u8; 16] = shared_secret
-            .try_into()
-            .map_err(|_| EncryptionError::SharedWrongLength)?;
-        self.network_reader.lock().await.set_encryption(&crypt_key);
-        self.network_writer.lock().await.set_encryption(&crypt_key);
-        Ok(())
+
+    pub async fn run(&mut self) {
+        self.start_outgoing_packet_task().await;
+
+        self.close();
+        self.await_tasks().await;
+
+        let player = self.player.lock();
+        if let Some(player) = player.as_ref() {
+            log::debug!("Cleaning up player for id {client_id}");
+
+            if let Err(e) = server_clone
+                .player_data_storage
+                .handle_player_leave(player)
+                .await
+            {
+                log::error!("Failed to save player data on disconnect: {e}");
+            }
+
+            player.remove();
+            server_clone.remove_player(player).await;
+        } else if java_client.connection_state == Play {
+            log::error!("No player found for id {client_id}. This should not happen!");
+        }
     }
 
-    pub async fn set_compression(&self, compression: CompressionInfo) {
+    pub async fn set_compression(&mut self, compression: CompressionInfo) {
         if compression.level > 9 {
             log::error!("Invalid compression level! Clients will not be able to read this!");
         }
 
         self.network_reader
-            .lock()
-            .await
             .set_compression(compression.threshold as usize);
 
         self.network_writer
-            .lock()
-            .await
             .set_compression((compression.threshold as usize, compression.level));
-    }
-
-    /// Processes all packets received from the connected client in a loop.
-    ///
-    /// This function continuously dequeues packets from the client's packet queue and processes them.
-    /// Processing involves calling the `handle_packet` function with the server instance and the packet itself.
-    ///
-    /// The loop exits when:
-    ///
-    /// - The connection is closed (checked before processing each packet).
-    /// - An error occurs while processing a packet (client is kicked with an error message).
-    ///
-    /// # Arguments
-    ///
-    /// * `server`: A reference to the `Server` instance.
-    pub async fn process_packets(self: &Arc<Self>, server: &Arc<Server>) {
-        loop {
-            let packet = self.get_packet().await;
-            let Some(packet) = packet else { break };
-
-            if let Err(error) = self.handle_packet(server, &packet).await {
-                let text = format!("Error while reading incoming packet {error}");
-                log::error!(
-                    "Failed to read incoming packet with id {}: {}",
-                    packet.id,
-                    error
-                );
-                self.kick(TextComponent::text(text)).await;
-            }
-        }
     }
 
     pub async fn await_tasks(&self) {
@@ -227,31 +250,8 @@ impl JavaClient {
         self.close_interrupt.notified().await;
     }
 
-    pub async fn get_packet(&self) -> Option<RawPacket> {
-        let mut network_reader = self.network_reader.lock().await;
-        tokio::select! {
-            () = self.await_close_interrupt() => {
-                log::debug!("Canceling player packet processing");
-                None
-            },
-            packet_result = network_reader.get_raw_packet() => {
-                match packet_result {
-                    Ok(packet) => Some(packet),
-                    Err(err) => {
-                        if !matches!(err, PacketDecodeError::ConnectionClosed) {
-                            log::warn!("Failed to decode packet from client {}: {}", self.id, err);
-                            let text = format!("Error while reading incoming packet {err}");
-                            self.kick(TextComponent::text(text)).await;
-                        }
-                        None
-                    }
-                }
-            }
-        }
-    }
-
     pub async fn kick(&self, reason: TextComponent) {
-        match self.connection_state.load() {
+        match self.connection_state {
             ConnectionState::Login => {
                 // TextComponent implements Serialize and writes in bytes instead of String, that's the reasib we only use content
                 self.send_packet_now(&CLoginDisconnect::new(
@@ -268,40 +268,6 @@ impl JavaClient {
         }
         log::debug!("Closing connection for {}", self.id);
         self.close();
-    }
-
-    pub async fn send_packet_now<P: ClientPacket>(&self, packet: &P) {
-        let mut packet_buf = Vec::new();
-        let writer = &mut packet_buf;
-        Self::write_packet(packet, writer).unwrap();
-        self.send_packet_now_data(packet_buf).await;
-    }
-
-    pub async fn send_packet_now_data(&self, packet: Vec<u8>) {
-        if let Err(err) = self
-            .network_writer
-            .lock()
-            .await
-            .write_packet(packet.into())
-            .await
-        {
-            // It is expected that the packet will fail if we are closed
-            if !self.closed.load(Ordering::Relaxed) {
-                log::warn!("Failed to send packet to client {}: {}", self.id, err);
-                // We now need to close the connection to the client since the stream is in an
-                // unknown state
-                self.close();
-            }
-        }
-    }
-
-    pub fn write_packet<P: ClientPacket>(
-        packet: &P,
-        write: impl Write,
-    ) -> Result<(), WritingError> {
-        let mut write = write;
-        write.write_var_int(&VarInt(P::PACKET_ID))?;
-        packet.write_packet_data(write)
     }
 
     /// Handles an incoming packet, routing it to the appropriate handler based on the current connection state.
@@ -328,22 +294,18 @@ impl JavaClient {
     /// # Errors
     ///
     /// Returns a `DeserializerError` if an error occurs during packet deserialization.
-    pub async fn handle_packet(
-        self: &Arc<Self>,
-        server: &Arc<Server>,
-        packet: &RawPacket,
-    ) -> Result<(), ReadingError> {
-        match self.connection_state.load() {
+    pub async fn handle_packet(&mut self, packet: &RawPacket) -> Result<(), ReadingError> {
+        match self.connection_state {
             ConnectionState::HandShake => self.handle_handshake_packet(packet).await,
-            ConnectionState::Status => self.handle_status_packet(server, packet).await,
+            ConnectionState::Status => self.handle_status_packet(packet).await,
             // TODO: Check config if transfer is enabled
             ConnectionState::Login | ConnectionState::Transfer => {
-                self.handle_login_packet(server, packet).await
+                self.handle_login_packet(packet).await
             }
-            ConnectionState::Config => self.handle_config_packet(server, packet).await,
+            ConnectionState::Config => self.handle_config_packet(packet).await,
             ConnectionState::Play => {
                 if let Some(player) = self.player.lock().await.as_ref() {
-                    match self.handle_play_packet(player, server, packet).await {
+                    match self.handle_play_packet(player, packet).await {
                         Ok(()) => {}
                         Err(e) => {
                             if e.is_kick() {
@@ -380,16 +342,12 @@ impl JavaClient {
         }
     }
 
-    async fn handle_status_packet(
-        &self,
-        server: &Server,
-        packet: &RawPacket,
-    ) -> Result<(), ReadingError> {
+    async fn handle_status_packet(&mut self, packet: &RawPacket) -> Result<(), ReadingError> {
         log::debug!("Handling status group");
         let payload = &packet.payload[..];
         match packet.id {
             SStatusRequest::PACKET_ID => {
-                self.handle_status_request(server).await;
+                self.server_conn.send(ClientServerEvent::StatusRequest);
                 Ok(())
             }
             SStatusPingRequest::PACKET_ID => {
@@ -404,43 +362,86 @@ impl JavaClient {
         }
     }
 
-    pub fn start_outgoing_packet_task(&mut self) {
+    /// Processes all packets received from the connected client in a loop.
+    ///
+    /// This function continuously dequeues packets from the client's packet queue and processes them.
+    /// Processing involves calling the `handle_packet` function with the server instance and the packet itself.
+    ///
+    /// The loop exits when:
+    ///
+    /// - The connection is closed (checked before processing each packet).
+    /// - An error occurs while processing a packet (client is kicked with an error message).
+    pub async fn start_outgoing_packet_task(&mut self) {
         let mut packet_receiver = self
             .outgoing_packet_queue_recv
             .take()
             .expect("This was set in the new fn");
         let close_interrupt = self.close_interrupt.clone();
         let closed = self.closed.clone();
-        let writer = self.network_writer.clone();
-        let id = self.id;
-        self.spawn_task(async move {
-            while !closed.load(Ordering::Relaxed) {
-                let recv_result = tokio::select! {
-                    () = close_interrupt.notified() => {
-                        None
-                    },
-                    recv_result = packet_receiver.recv() => {
-                        recv_result
-                    }
-                };
+        let mut keep_running = true;
 
-                let Some(packet_data) = recv_result else {
-                    break;
-                };
+        while !closed.load(Ordering::Relaxed) && keep_running {
+            keep_running = tokio::select! {
+                () = close_interrupt.notified() => {
+                    false
+                },
+                recv_result = packet_receiver.recv() => {
+                    self.process_send(recv_result).await
+                }
+                packet_result = self.network_reader.get_raw_packet() => {
+                    self.read_packet(packet_result).await
+                }
+            };
+        }
+    }
 
-                if let Err(err) = writer.lock().await.write_packet(packet_data).await {
-                    // It is expected that the packet will fail if we are closed
-                    if !closed.load(Ordering::Relaxed) {
-                        log::warn!("Failed to send packet to client {id}: {err}",);
-                        // We now need to close the connection to the client since the stream is in an
-                        // unknown state
-                        close_interrupt.notify_waiters();
-                        closed.store(true, Ordering::Relaxed);
-                        break;
-                    }
+    /// return should continue
+    pub async fn process_send(&mut self, recv_result: Option<Bytes>) -> bool {
+        let writer = &mut self.network_writer;
+        let Some(recv_result) = recv_result else {
+            return true;
+        };
+        if let Err(err) = writer.write_packet(recv_result).await {
+            // It is expected that the packet will fail if we are closed
+            if !self.closed.load(Ordering::Relaxed) {
+                log::warn!("Failed to send packet to client {}: {err}", self.id);
+                // We now need to close the connection to the client since the stream is in an
+                // unknown state
+                self.close_interrupt.notify_waiters();
+                self.closed.store(true, Ordering::Relaxed);
+                return false;
+            }
+        }
+        true
+    }
+
+    pub async fn read_packet(
+        &mut self,
+        packet_result: Result<RawPacket, PacketDecodeError>,
+    ) -> bool {
+        match packet_result {
+            Ok(packet) => {
+                if let Err(error) = self.handle_packet(&packet).await {
+                    let text = format!("Error while reading incoming packet {error}");
+                    log::error!(
+                        "Failed to read incoming packet with id {}: {}",
+                        packet.id,
+                        error
+                    );
+                    self.kick(TextComponent::text(text)).await;
+                    return false;
                 }
             }
-        });
+            Err(err) => {
+                if !matches!(err, PacketDecodeError::ConnectionClosed) {
+                    log::warn!("Failed to decode packet from client {}: {}", self.id, err);
+                    let text = format!("Error while reading incoming packet {err}");
+                    self.kick(TextComponent::text(text)).await;
+                }
+                return false;
+            }
+        }
+        true
     }
 
     /// Closes the connection to the client.
@@ -457,20 +458,15 @@ impl JavaClient {
         self.closed.store(true, Ordering::Relaxed);
     }
 
-    async fn handle_login_packet(
-        &self,
-        server: &Server,
-        packet: &RawPacket,
-    ) -> Result<(), ReadingError> {
+    async fn handle_login_handshake(&self, packet: &RawPacket) -> Result<(), ReadingError> {
         log::debug!("Handling login group for id");
         let payload = &packet.payload[..];
         match packet.id {
             SLoginStart::PACKET_ID => {
-                self.handle_login_start(server, SLoginStart::read(payload)?)
-                    .await;
+                self.handle_login_start(SLoginStart::read(payload)?).await;
             }
             SEncryptionResponse::PACKET_ID => {
-                self.handle_encryption_response(server, SEncryptionResponse::read(payload)?)
+                self.handle_encryption_response(SEncryptionResponse::read(payload)?)
                     .await;
             }
             SLoginPluginResponse::PACKET_ID => {
@@ -478,7 +474,7 @@ impl JavaClient {
                     .await;
             }
             SLoginAcknowledged::PACKET_ID => {
-                self.handle_login_acknowledged(server).await;
+                self.handle_login_acknowledged().await;
             }
             SLoginCookieResponse::PACKET_ID => {
                 self.handle_login_cookie_response(&SLoginCookieResponse::read(payload)?);
@@ -493,11 +489,7 @@ impl JavaClient {
         Ok(())
     }
 
-    async fn handle_config_packet(
-        self: &Arc<Self>,
-        server: &Server,
-        packet: &RawPacket,
-    ) -> Result<(), ReadingError> {
+    async fn handle_config_packet(&mut self, packet: &RawPacket) -> Result<(), ReadingError> {
         log::debug!("Handling config group");
         let payload = &packet.payload[..];
         match packet.id {
@@ -510,11 +502,10 @@ impl JavaClient {
                     .await;
             }
             SAcknowledgeFinishConfig::PACKET_ID => {
-                self.handle_config_acknowledged(server).await;
+                self.handle_config_acknowledged().await;
             }
             SKnownPacks::PACKET_ID => {
-                self.handle_known_packs(server, SKnownPacks::read(payload)?)
-                    .await;
+                self.handle_known_packs(SKnownPacks::read(payload)?).await;
             }
             SConfigCookieResponse::PACKET_ID => {
                 self.handle_config_cookie_response(&SConfigCookieResponse::read(payload)?);
@@ -675,5 +666,130 @@ impl JavaClient {
             }
         }
         Ok(())
+    }
+}
+
+#[derive(Debug)]
+enum LoginError {
+    InvalidHandshake,
+    ServerRejected,
+    InvalidUsername,
+    IgnoredPluginRequest,
+    ReadError(ReadingError),
+    VelocityError(VelocityError),
+    BungeeCordError(BungeeCordError),
+}
+
+impl LoginClient {
+    /// Start the login handshake
+    ///
+    /// Handle this sequentially (async w.r.t server) to reduce need for stored state and synchronisation
+    async fn process_login(&mut self) -> Result<(), LoginError> {
+        self.network_reader.get_raw_packet();
+        let Ok(packet) = self.network_reader.get_raw_packet().await else {
+            return Err(LoginError::InvalidHandshake);
+        };
+        if packet.id != SLoginStart::PACKET_ID {
+            return Err(LoginError::InvalidHandshake);
+        }
+        self.handle_login_start(SLoginStart::read(&packet.payload[..])?)
+            .await?;
+        let Ok(packet) = self.network_reader.get_raw_packet().await else {
+            return Err(LoginError::InvalidHandshake);
+        };
+        Ok(())
+    }
+
+    pub async fn set_encryption(
+        &mut self,
+        shared_secret: &[u8], // decrypted
+    ) -> Result<(), EncryptionError> {
+        let crypt_key: [u8; 16] = shared_secret
+            .try_into()
+            .map_err(|_| EncryptionError::SharedWrongLength)?;
+        self.network_reader.set_encryption(&crypt_key);
+        self.network_writer.set_encryption(&crypt_key);
+        Ok(())
+    }
+
+    pub async fn kick(&mut self, reason: TextComponent) -> Result<(), PacketEncodeError> {
+        send_packet_now(
+            &mut self.network_writer,
+            &CLoginDisconnect::new(
+                serde_json::to_string(&reason.0).unwrap_or_else(|_| String::new()),
+            ),
+        )
+        .await
+    }
+}
+
+pub async fn send_packet_now<P: ClientPacket>(
+    network_writer: &mut NetEncoder,
+    packet: &P,
+) -> Result<(), PacketEncodeError> {
+    let mut packet_buf = Vec::new();
+    let writer = &mut packet_buf;
+    write_packet(packet, writer).unwrap();
+    send_packet_now_data(network_writer, packet_buf).await
+}
+
+pub async fn send_packet_now_data(
+    network_writer: &mut NetEncoder,
+    packet: Vec<u8>,
+) -> Result<(), PacketEncodeError> {
+    network_writer.write_packet(packet.into()).await
+}
+
+pub fn write_packet<P: ClientPacket>(packet: &P, write: impl Write) -> Result<(), WritingError> {
+    let mut write = write;
+    write.write_var_int(&VarInt(P::PACKET_ID))?;
+    packet.write_packet_data(write)
+}
+
+impl LoginError {
+    fn get_kick_message(&self) -> TextComponent {
+        match self {
+            LoginError::InvalidHandshake => {
+                TextComponent::text("Invalid packet performing Handshake!")
+            }
+            LoginError::ServerRejected => {
+                TextComponent::text("Rejected by server, server full or UUID/username duplicate")
+            }
+            LoginError::InvalidUsername => TextComponent::text("Invalid characters in username"),
+            LoginError::ReadError(reading_error) => TextComponent::text("Internal server error"),
+        }
+    }
+}
+
+impl From<ReadingError> for LoginError {
+    fn from(value: ReadingError) -> Self {
+        Self::ReadError(value)
+    }
+}
+
+impl From<VelocityError> for LoginError {
+    fn from(value: VelocityError) -> Self {
+        Self::VelocityError(value)
+    }
+}
+
+impl From<BungeeCordError> for LoginError {
+    fn from(value: BungeeCordError) -> Self {
+        Self::BungeeCordError(value)
+    }
+}
+
+impl Error for LoginError {}
+impl Display for LoginError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            LoginError::ReadError(reading_error) => write!(f, "ReadError {{ {reading_error} }}"),
+            LoginError::InvalidHandshake => write!(f, "InvalidHandshake"),
+            LoginError::ServerRejected => write!(f, "ServerRejected"),
+            LoginError::InvalidUsername => write!(f, "InvalidUsername"),
+            LoginError::VelocityError(vel) => write!(f, "VelocityError {{ {vel} }}"),
+            LoginError::BungeeCordError(bung) => write!(f, "BungeeCordError {{ {bung} }}"),
+            LoginError::IgnoredPluginRequest => write!(f, "IgnoredPluginRequest"),
+        }
     }
 }

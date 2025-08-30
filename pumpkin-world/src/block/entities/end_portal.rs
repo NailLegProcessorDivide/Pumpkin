@@ -1,4 +1,4 @@
-use async_trait::async_trait;
+
 use pumpkin_util::math::position::BlockPos;
 
 use super::BlockEntity;
@@ -14,7 +14,6 @@ impl EndPortalBlockEntity {
     }
 }
 
-#[async_trait]
 impl BlockEntity for EndPortalBlockEntity {
     fn resource_location(&self) -> &'static str {
         Self::ID
@@ -31,7 +30,7 @@ impl BlockEntity for EndPortalBlockEntity {
         Self { position }
     }
 
-    async fn write_nbt(&self, _nbt: &mut pumpkin_nbt::compound::NbtCompound) {}
+    fn write_nbt(&self, _nbt: &mut pumpkin_nbt::compound::NbtCompound) {}
 
     fn as_any(&self) -> &dyn std::any::Any {
         self

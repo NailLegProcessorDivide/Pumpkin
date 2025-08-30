@@ -1,4 +1,3 @@
-use async_trait::async_trait;
 use pumpkin_util::{math::vector3::Vector3, text::TextComponent};
 use uuid::Uuid;
 
@@ -23,9 +22,9 @@ const ARG_POS: &str = "pos";
 
 struct Executor;
 
-#[async_trait]
+
 impl CommandExecutor for Executor {
-    async fn execute<'a>(
+    fn execute<'a>(
         &self,
         sender: &mut CommandSender,
         server: &crate::server::Server,
@@ -35,13 +34,13 @@ impl CommandExecutor for Executor {
         let pos = Position3DArgumentConsumer::find_arg(args, ARG_POS);
         let (world, pos) = match sender {
             CommandSender::Console | CommandSender::Rcon(_) => {
-                let guard = server.worlds.read().await;
+                let guard = server.worlds.read();
                 let world = guard
                     .first()
                     .cloned()
                     .ok_or(CommandError::InvalidRequirement)?;
                 let pos = {
-                    let info = &world.level_info.read().await;
+                    let info = &world.level_info.read();
                     // default position for spawning a player, in this case for mob
                     pos.unwrap_or(Vector3::new(
                         f64::from(info.spawn_x) + 0.5,
@@ -58,15 +57,13 @@ impl CommandExecutor for Executor {
                 (player.world().clone(), pos)
             }
         };
-        let mob = from_type(entity, pos, &world, Uuid::new_v4()).await;
-        world.spawn_entity(mob).await;
+        let mob = from_type(entity, pos, &world, Uuid::new_v4());
+        world.spawn_entity(mob);
 
-        sender
-            .send_message(TextComponent::translate(
-                "commands.summon.success",
-                [TextComponent::text(format!("{entity:?}"))],
-            ))
-            .await;
+        sender.send_message(TextComponent::translate(
+            "commands.summon.success",
+            [TextComponent::text(format!("{entity:?}"))],
+        ));
 
         Ok(())
     }

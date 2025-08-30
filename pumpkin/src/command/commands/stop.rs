@@ -1,4 +1,3 @@
-use async_trait::async_trait;
 use pumpkin_util::text::TextComponent;
 use pumpkin_util::text::color::NamedColor;
 
@@ -13,19 +12,17 @@ const DESCRIPTION: &str = "Stop the server.";
 
 struct Executor;
 
-#[async_trait]
+
 impl CommandExecutor for Executor {
-    async fn execute<'a>(
+    fn execute<'a>(
         &self,
         sender: &mut CommandSender,
         _server: &crate::server::Server,
         _args: &ConsumedArgs<'a>,
     ) -> Result<(), CommandError> {
-        sender
-            .send_message(
-                TextComponent::translate("commands.stop.stopping", []).color_named(NamedColor::Red),
-            )
-            .await;
+        sender.send_message(
+            TextComponent::translate("commands.stop.stopping", []).color_named(NamedColor::Red),
+        );
         stop_server();
         Ok(())
     }

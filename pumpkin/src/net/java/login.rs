@@ -1,6 +1,6 @@
-use std::sync::LazyLock;
+use std::{net::SocketAddr, sync::LazyLock};
 
-use pumpkin_config::{BASIC_CONFIG, advanced_config};
+use pumpkin_config::{BASIC_CONFIG, advanced_config, networking::proxy::ProxyType};
 use pumpkin_protocol::{
     ConnectionState, KnownPack, Label, Link, LinkType,
     java::client::{
@@ -12,6 +12,7 @@ use pumpkin_protocol::{
     },
 };
 use pumpkin_util::text::TextComponent;
+use tokio::sync::oneshot;
 use uuid::Uuid;
 
 use crate::{
@@ -19,7 +20,8 @@ use crate::{
         GameProfile,
         authentication::{self, AuthError},
         is_valid_player_name,
-        java::JavaClient,
+        java::{self, LoginClient, LoginError},
+        net_thread::{ClientHandle, ClientServerEvent},
         offline_uuid,
         proxy::{bungeecord, velocity},
     },
@@ -86,91 +88,91 @@ static LINKS: LazyLock<Vec<Link>> = LazyLock::new(|| {
     links
 });
 
-impl JavaClient {
-    pub async fn handle_login_start(&self, server: &Server, login_start: SLoginStart) {
+impl LoginClient {
+    pub async fn handle_login_start(
+        &mut self,
+        login_start: SLoginStart,
+    ) -> Result<(GameProfile, SocketAddr), LoginError> {
         log::debug!("login start");
 
         // Don't allow new logons when the server is full.
         // If `max_players` is set to zero, then there is no max player count enforced.
         // TODO: If client is an operator or has otherwise suitable elevated permissions, allow the client to bypass this requirement.
         let max_players = BASIC_CONFIG.max_players;
-        if max_players > 0 && server.get_player_count().await >= max_players as usize {
+        // TODO: Actually get info from server thread
+        if !max_players.is_some_and(|num| num.get() < 5) {
             self.kick(TextComponent::translate(
                 "multiplayer.disconnect.server_full",
                 [],
             ))
             .await;
-            return;
+            return Err(LoginError::ServerRejected);
         }
 
         if !is_valid_player_name(&login_start.name) {
-            self.kick(TextComponent::text("Invalid characters in username"))
-                .await;
-            return;
+            return Err(LoginError::InvalidUsername);
         }
         // Default game profile, when no online mode
         // TODO: Make offline UUID
-        let mut gameprofile = self.gameprofile.lock().await;
-        let proxy = &advanced_config().networking.proxy;
-        if proxy.enabled {
-            if proxy.velocity.enabled {
+        match &advanced_config().networking.proxy {
+            Some(ProxyType::Velocity { secret: _ }) => {
                 velocity::velocity_login(self).await;
-            } else if proxy.bungeecord.enabled {
-                match bungeecord::bungeecord_login(
-                    &self.address,
-                    &self.server_address.lock().await,
-                    login_start.name,
-                )
-                .await
-                {
-                    Ok((_ip, profile)) => {
-                        // self.address.lock() = ip;
-                        self.finish_login(&profile).await;
-                        *gameprofile = Some(profile);
-                    }
-                    Err(error) => self.kick(TextComponent::text(error.to_string())).await,
-                }
+                todo!("make a game profile when connecting to a velocity proxy")
             }
-        } else {
-            let id = if BASIC_CONFIG.online_mode {
-                login_start.uuid
-            } else {
-                offline_uuid(&login_start.name).expect("This is very not safe and bad")
-            };
-
-            let profile = GameProfile {
-                id,
-                name: login_start.name,
-                properties: vec![],
-                profile_actions: None,
-            };
-
-            if advanced_config().networking.packet_compression.enabled {
-                self.enable_compression().await;
-            }
-
-            if BASIC_CONFIG.encryption {
-                let verify_token: [u8; 4] = rand::random();
-                // Wait until we have sent the encryption packet to the client
-                self.send_packet_now(
-                    &server.encryption_request(&verify_token, BASIC_CONFIG.online_mode),
-                )
-                .await;
-            } else {
-                self.finish_login(&profile).await;
-            }
-
-            *gameprofile = Some(profile);
+            Some(ProxyType::BengeeCord) => Ok(bungeecord::bungeecord_login(
+                &self.address,
+                &self.server_address,
+                login_start.name,
+            )
+            .await
+            .map(|(_, profile)| (profile, self.address))?),
+            None => self.process_vanilla_login_start(login_start).await,
         }
     }
 
-    pub async fn handle_encryption_response(
-        &self,
-        server: &Server,
-        encryption_response: SEncryptionResponse,
-    ) {
+    async fn process_vanilla_login_start(
+        &mut self,
+        login_start: SLoginStart,
+    ) -> Result<(GameProfile, SocketAddr), LoginError> {
+        let id = if BASIC_CONFIG.online_mode {
+            login_start.uuid
+        } else {
+            offline_uuid(&login_start.name).expect("This is very not safe and bad")
+        };
+
+        let profile = GameProfile {
+            id,
+            name: login_start.name,
+            properties: vec![],
+            profile_actions: None,
+        };
+
+        if advanced_config().networking.packet_compression.enabled {
+            self.enable_compression().await;
+        }
+
+        if BASIC_CONFIG.encryption {
+            let verify_token: [u8; 4] = rand::random();
+            // Wait until we have sent the encryption packet to the client
+            java::send_packet_now(
+                &mut self.network_writer,
+                &self
+                    .key_store
+                    .encryption_request("", &verify_token, BASIC_CONFIG.online_mode),
+            )
+            .await;
+        } else {
+            self.finish_login(&profile).await;
+        }
+        Ok((profile, self.address))
+    }
+
+    pub async fn handle_encryption_response(&mut self, encryption_response: SEncryptionResponse) {
         log::debug!("Handling encryption");
-        let shared_secret = server.decrypt(&encryption_response.shared_secret).unwrap();
+        let shared_secret = self
+            .key_store
+            .decrypt(&encryption_response.shared_secret)
+            .unwrap();
 
         if let Err(error) = self.set_encryption(&shared_secret).await {
             self.kick(TextComponent::text(error.to_string())).await;
@@ -186,10 +188,7 @@ impl JavaClient {
 
         if BASIC_CONFIG.online_mode {
             // Online mode auth
-            match self
-                .authenticate(server, &shared_secret, &profile.name)
-                .await
-            {
+            match self.authenticate(&shared_secret, &profile.name).await {
                 Ok(new_profile) => *profile = new_profile,
                 Err(error) => {
                     self.kick(match error {
@@ -207,31 +206,13 @@ impl JavaClient {
             }
         }
 
-        // Don't allow duplicate UUIDs
-        if let Some(online_player) = &server.get_player_by_uuid(profile.id).await {
+        if Self::check_player_exists(&mut self.server_conn, profile.name.clone(), profile.id).await
+        {
             log::debug!(
-                "Player (IP '{}', username '{}') tried to log in with the same UUID ('{}') as an online player (username '{}')",
-                &self.address.lock().await,
+                "Player (IP '{}', username '{}') tried to log in with the same UUID or username as an online player (uuid '{}')",
+                &self.address,
                 &profile.name,
                 &profile.id,
-                &online_player.gameprofile.name
-            );
-            self.kick(TextComponent::translate(
-                "multiplayer.disconnect.duplicate_login",
-                [],
-            ))
-            .await;
-            return;
-        }
-
-        // Don't allow a duplicate username
-        if let Some(online_player) = &server.get_player_by_name(&profile.name).await {
-            log::debug!(
-                "A player (IP '{}', attempted username '{}') tried to log in with the same username as an online player (UUID '{}', username '{}')",
-                &self.address.lock().await,
-                &profile.name,
-                &profile.id,
-                &online_player.gameprofile.name
             );
             self.kick(TextComponent::translate(
                 "multiplayer.disconnect.duplicate_login",
@@ -244,7 +225,15 @@ impl JavaClient {
         self.finish_login(profile).await;
     }
 
-    async fn enable_compression(&self) {
+    async fn check_player_exists(server_conn: &mut ClientHandle, name: String, uuid: Uuid) -> bool {
+        let (sender, receiver) = oneshot::channel();
+        server_conn
+            .send(ClientServerEvent::CanPlayerJoin(name, uuid, sender))
+            .is_err()
+            || receiver.await != Ok(true)
+    }
+
+    async fn enable_compression(&mut self) {
         let compression = advanced_config().networking.packet_compression.info.clone();
         // We want to wait until we have sent the compression packet to the client
         self.send_packet_now(&CSetCompression::new(
@@ -261,11 +250,10 @@ impl JavaClient {
 
     async fn authenticate(
         &self,
-        server: &Server,
         shared_secret: &[u8],
         username: &str,
     ) -> Result<GameProfile, AuthError> {
-        let hash = server.digest_secret(shared_secret);
+        let hash = self.key_store.get_digest(shared_secret);
         let ip = self.address.lock().await.ip();
         let profile = authentication::authenticate(username, &hash, &ip)?;
 
@@ -313,30 +301,26 @@ impl JavaClient {
             packet.payload.as_ref().map(|p| p.len())
         );
     }
-    pub async fn handle_plugin_response(&self, plugin_response: SLoginPluginResponse) {
+    pub async fn handle_plugin_response(
+        &self,
+        plugin_response: SLoginPluginResponse,
+    ) -> Result<(GameProfile, SocketAddr), LoginError> {
         log::debug!("Handling plugin");
         let velocity_config = &advanced_config().networking.proxy.velocity;
         if velocity_config.enabled {
-            let mut address = self.address.lock().await;
-            match velocity::receive_velocity_plugin_response(
-                address.port(),
+            Ok(velocity::receive_velocity_plugin_response(
+                self.address.port(),
                 velocity_config,
                 plugin_response,
-            ) {
-                Ok((profile, new_address)) => {
-                    self.finish_login(&profile).await;
-                    *self.gameprofile.lock().await = Some(profile);
-                    *address = new_address;
-                    drop(address);
-                }
-                Err(error) => self.kick(TextComponent::text(error.to_string())).await,
-            }
+            )?)
+        } else {
+            Err(LoginError::IgnoredPluginRequest)
         }
     }
 
     pub async fn handle_login_acknowledged(&self, server: &Server) {
         log::debug!("Handling login acknowledgement");
-        self.connection_state.store(ConnectionState::Config);
+        self.connection_state = ConnectionState::Config;
         self.send_packet_now(&server.get_branding()).await;
 
         if advanced_config().server_links.enabled {

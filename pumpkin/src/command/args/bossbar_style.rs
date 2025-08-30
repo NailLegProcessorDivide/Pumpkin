@@ -6,7 +6,7 @@ use crate::command::dispatcher::CommandError;
 use crate::command::tree::RawArgs;
 use crate::server::Server;
 use crate::world::bossbar::BossbarDivisions;
-use async_trait::async_trait;
+
 use pumpkin_protocol::java::client::play::{ArgumentType, CommandSuggestion, SuggestionProviders};
 
 pub struct BossbarStyleArgumentConsumer;
@@ -22,9 +22,9 @@ impl GetClientSideArgParser for BossbarStyleArgumentConsumer {
     }
 }
 
-#[async_trait]
+
 impl ArgumentConsumer for BossbarStyleArgumentConsumer {
-    async fn consume<'a>(
+    fn consume<'a>(
         &'a self,
         _sender: &CommandSender,
         _server: &'a Server,
@@ -44,7 +44,7 @@ impl ArgumentConsumer for BossbarStyleArgumentConsumer {
         style.map(Arg::BossbarStyle)
     }
 
-    async fn suggest<'a>(
+    fn suggest<'a>(
         &'a self,
         _sender: &CommandSender,
         _server: &'a Server,

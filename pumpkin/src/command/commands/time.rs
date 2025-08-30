@@ -1,4 +1,3 @@
-use async_trait::async_trait;
 use pumpkin_util::text::TextComponent;
 use pumpkin_util::text::color::{Color, NamedColor};
 
@@ -46,9 +45,9 @@ enum QueryMode {
 
 struct QueryExecutor(QueryMode);
 
-#[async_trait]
+
 impl CommandExecutor for QueryExecutor {
-    async fn execute<'a>(
+    fn execute<'a>(
         &self,
         sender: &mut CommandSender,
         server: &crate::server::Server,
@@ -56,11 +55,11 @@ impl CommandExecutor for QueryExecutor {
     ) -> Result<(), CommandError> {
         let mode = self.0;
         // TODO: Maybe ask player for world, or get the current world
-        let worlds = server.worlds.read().await;
+        let worlds = server.worlds.read();
         let world = worlds
             .first()
             .expect("There should always be at least one world");
-        let level_time = world.level_time.lock().await;
+        let level_time = world.level_time.lock();
 
         let msg = match mode {
             QueryMode::DayTime => {
@@ -86,16 +85,16 @@ impl CommandExecutor for QueryExecutor {
             }
         };
 
-        sender.send_message(msg).await;
+        sender.send_message(msg);
         Ok(())
     }
 }
 
 struct ChangeExecutor(Mode);
 
-#[async_trait]
+
 impl CommandExecutor for ChangeExecutor {
-    async fn execute<'a>(
+    fn execute<'a>(
         &self,
         sender: &mut CommandSender,
         server: &crate::server::Server,
@@ -106,28 +105,25 @@ impl CommandExecutor for ChangeExecutor {
         } else if let Ok(ticks) = TimeArgumentConsumer::find_arg(args, ARG_TIME) {
             ticks
         } else {
-            sender
-                .send_message(
-                    TextComponent::text("Invalid time specified.")
-                        .color(Color::Named(NamedColor::Red)),
-                )
-                .await;
+            sender.send_message(
+                TextComponent::text("Invalid time specified.").color(Color::Named(NamedColor::Red)),
+            );
             return Ok(());
         };
 
         let mode = self.0;
         // TODO: Maybe ask player for world, or get the current world
-        let worlds = server.worlds.read().await;
+        let worlds = server.worlds.read();
         let world = worlds
             .first()
             .expect("There should always be at least one world");
-        let mut level_time = world.level_time.lock().await;
+        let mut level_time = world.level_time.lock();
 
         let msg = match mode {
             Mode::Add => {
                 // add
                 level_time.add_time(time_count.into());
-                level_time.send_time(world).await;
+                level_time.send_time(world);
                 let curr_time = level_time.query_daytime();
                 TextComponent::translate(
                     "commands.time.set",
@@ -137,7 +133,7 @@ impl CommandExecutor for ChangeExecutor {
             Mode::Set(_) => {
                 // set
                 level_time.set_time(time_count.into());
-                level_time.send_time(world).await;
+                level_time.send_time(world);
                 TextComponent::translate(
                     "commands.time.set",
                     [TextComponent::text(time_count.to_string())],
@@ -145,7 +141,7 @@ impl CommandExecutor for ChangeExecutor {
             }
         };
 
-        sender.send_message(msg).await;
+        sender.send_message(msg);
         Ok(())
     }
 }

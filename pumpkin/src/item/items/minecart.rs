@@ -4,7 +4,7 @@ use crate::entity::Entity;
 use crate::entity::player::Player;
 use crate::item::{ItemBehaviour, ItemMetadata};
 use crate::server::Server;
-use async_trait::async_trait;
+
 use pumpkin_data::BlockDirection;
 use pumpkin_data::block_properties::{
     BlockProperties, PoweredRailLikeProperties, RailLikeProperties,
@@ -48,9 +48,9 @@ impl ItemMetadata for MinecartItem {
     }
 }
 
-#[async_trait]
+
 impl ItemBehaviour for MinecartItem {
-    async fn use_on_block(
+    fn use_on_block(
         &self,
         item: &mut ItemStack,
         player: &Player,
@@ -64,7 +64,7 @@ impl ItemBehaviour for MinecartItem {
         if !block.is_tagged_with_by_tag(&tag::Block::MINECRAFT_RAILS) {
             return;
         }
-        let state_id = world.get_block_state_id(&location).await;
+        let state_id = world.get_block_state_id(&location);
         let is_ascending = if PoweredRailLikeProperties::handles_block_id(block.id) {
             PoweredRailLikeProperties::from_state_id(state_id, block)
                 .shape
@@ -84,7 +84,7 @@ impl ItemBehaviour for MinecartItem {
             entity_type,
             false,
         ));
-        world.spawn_entity(entity).await;
+        world.spawn_entity(entity);
     }
 
     fn as_any(&self) -> &dyn std::any::Any {

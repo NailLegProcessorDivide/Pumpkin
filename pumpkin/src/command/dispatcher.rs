@@ -62,17 +62,15 @@ pub struct CommandDispatcher {
 
 /// Stores registered [`CommandTree`]s and dispatches commands to them.
 impl CommandDispatcher {
-    pub async fn handle_command<'a>(
+    pub fn handle_command<'a>(
         &'a self,
         sender: &mut CommandSender,
         server: &'a Server,
         cmd: &'a str,
     ) {
-        if let Err(e) = self.dispatch(sender, server, cmd).await {
+        if let Err(e) = self.dispatch(sender, server, cmd) {
             let text = e.into_component(cmd);
-            sender
-                .send_message(text.color_named(pumpkin_util::text::color::NamedColor::Red))
-                .await;
+            sender.send_message(text.color_named(pumpkin_util::text::color::NamedColor::Red));
         }
     }
 
@@ -81,7 +79,7 @@ impl CommandDispatcher {
     /// # todo
     /// - make this less ugly
     /// - do not query suggestions for the same consumer multiple times just because they are on different paths through the tree
-    pub(crate) async fn find_suggestions<'a>(
+    pub(crate) fn find_suggestions<'a>(
         &'a self,
         src: &CommandSender,
         server: &'a Server,
@@ -102,9 +100,7 @@ impl CommandDispatcher {
         // try paths and collect the nodes that fail
         // todo: make this more fine-grained
         for path in tree.iter_paths() {
-            match Self::try_find_suggestions_on_path(src, server, &path, tree, &mut raw_args, cmd)
-                .await
-            {
+            match Self::try_find_suggestions_on_path(src, server, &path, tree, &mut raw_args, cmd) {
                 Err(InvalidConsumption(s)) => {
                     log::trace!(
                         "Error while parsing command \"{cmd}\": {s:?} was consumed, but couldn't be parsed"
@@ -240,7 +236,7 @@ impl CommandDispatcher {
     }
 
     /// Execute a command using its corresponding [`CommandTree`].
-    pub(crate) async fn dispatch<'a>(
+    pub(crate) fn dispatch<'a>(
         &'a self,
         src: &mut CommandSender,
         server: &'a Server,
@@ -260,7 +256,7 @@ impl CommandDispatcher {
             ))));
         };
 
-        if !src.has_permission(permission.as_str()).await {
+        if !src.has_permission(permission.as_str()) {
             return Err(PermissionDenied);
         }
 
@@ -268,7 +264,7 @@ impl CommandDispatcher {
 
         // try paths until fitting path is found
         for path in tree.iter_paths() {
-            if Self::try_is_fitting_path(src, server, &path, tree, &mut raw_args.clone()).await? {
+            if Self::try_is_fitting_path(src, server, &path, tree, &mut raw_args.clone())? {
                 return Ok(());
             }
         }
@@ -301,7 +297,7 @@ impl CommandDispatcher {
         }
     }
 
-    async fn try_is_fitting_path<'a>(
+    fn try_is_fitting_path<'a>(
         src: &mut CommandSender,
         server: &'a Server,
         path: &[usize],
@@ -314,7 +310,7 @@ impl CommandDispatcher {
             match &node.node_type {
                 NodeType::ExecuteLeaf { executor } => {
                     return if raw_args.is_empty() {
-                        executor.execute(src, server, &parsed_args).await?;
+                        executor.execute(src, server, &parsed_args)?;
                         Ok(true)
                     } else {
                         log::debug!(
@@ -330,7 +326,7 @@ impl CommandDispatcher {
                     }
                 }
                 NodeType::Argument { consumer, name, .. } => {
-                    if let Some(consumed) = consumer.consume(src, server, raw_args).await {
+                    if let Some(consumed) = consumer.consume(src, server, raw_args) {
                         parsed_args.insert(name, consumed);
                     } else {
                         log::debug!(
@@ -356,7 +352,7 @@ impl CommandDispatcher {
         Ok(false)
     }
 
-    async fn try_find_suggestions_on_path<'a>(
+    fn try_find_suggestions_on_path<'a>(
         src: &CommandSender,
         server: &'a Server,
         path: &[usize],
@@ -377,13 +373,13 @@ impl CommandDispatcher {
                     }
                 }
                 NodeType::Argument { consumer, name } => {
-                    match consumer.consume(src, server, raw_args).await {
+                    match consumer.consume(src, server, raw_args) {
                         Some(consumed) => {
                             parsed_args.insert(name, consumed);
                         }
                         None => {
                             return if raw_args.is_empty() {
-                                let suggestions = consumer.suggest(src, server, input).await?;
+                                let suggestions = consumer.suggest(src, server, input)?;
                                 Ok(suggestions)
                             } else {
                                 Ok(None)
@@ -443,9 +439,9 @@ impl CommandDispatcher {
 #[cfg(test)]
 mod test {
     use crate::command::{commands::default_dispatcher, tree::CommandTree};
-    #[tokio::test]
-    async fn test_dynamic_command() {
-        let mut dispatcher = default_dispatcher().await;
+    #[test]
+    fn test_dynamic_command() {
+        let mut dispatcher = default_dispatcher();
         let tree = CommandTree::new(["test"], "test_desc");
         dispatcher.register(tree, "minecraft:test");
     }

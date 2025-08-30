@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use futures::future::join_all;
 use loader::{LoaderError, PluginLoader, native::NativePluginLoader};
+use parking_lot::RwLock;
 use std::{
     any::Any,
     collections::{HashMap, HashSet},
@@ -8,7 +9,6 @@ use std::{
     sync::Arc,
 };
 use thiserror::Error;
-use tokio::sync::{Notify, RwLock};
 
 pub mod api;
 pub mod loader;
@@ -25,17 +25,13 @@ pub trait DynEventHandler: Send + Sync {
     ///
     /// # Arguments
     /// - `event`: A reference to the event to handle.
-    async fn handle_dyn(&self, _server: &Arc<Server>, event: &(dyn Event + Send + Sync));
+    fn handle_dyn(&self, _server: &Arc<Server>, event: &(dyn Event + Send + Sync));
 
     /// Asynchronously handles a blocking dynamic event.
     ///
     /// # Arguments
     /// - `event`: A mutable reference to the event to handle.
-    async fn handle_blocking_dyn(
-        &self,
-        _server: &Arc<Server>,
-        _event: &mut (dyn Event + Send + Sync),
-    );
+    fn handle_blocking_dyn(&self, _server: &Arc<Server>, _event: &mut (dyn Event + Send + Sync));
 
     /// Checks if the event handler is blocking.
     ///
@@ -59,13 +55,13 @@ pub trait EventHandler<E: Event>: Send + Sync {
     ///
     /// # Arguments
     /// - `event`: A reference to the event to handle.
-    async fn handle(&self, _server: &Arc<Server>, _event: &E) {}
+    fn handle(&self, _server: &Arc<Server>, _event: &E) {}
 
     /// Asynchronously handles a blocking event of type `E`.
     ///
     /// # Arguments
     /// - `event`: A mutable reference to the event to handle.
-    async fn handle_blocking(&self, _server: &Arc<Server>, _event: &mut E) {}
+    fn handle_blocking(&self, _server: &Arc<Server>, _event: &mut E) {}
 }
 
 /// A struct representing a typed event handler.
@@ -89,27 +85,23 @@ where
     H: EventHandler<E> + Send + Sync,
 {
     /// Asynchronously handles a blocking dynamic event.
-    async fn handle_blocking_dyn(
-        &self,
-        server: &Arc<Server>,
-        event: &mut (dyn Event + Send + Sync),
-    ) {
+    fn handle_blocking_dyn(&self, server: &Arc<Server>, event: &mut (dyn Event + Send + Sync)) {
         if E::get_name_static() == event.get_name() {
             // Safely cast the event to the correct type and handle it.
             let event = unsafe {
                 &mut *std::ptr::from_mut::<dyn std::any::Any>(event.as_any_mut()).cast::<E>()
             };
-            self.handler.handle_blocking(server, event).await;
+            self.handler.handle_blocking(server, event);
         }
     }
 
     /// Asynchronously handles a dynamic event.
-    async fn handle_dyn(&self, server: &Arc<Server>, event: &(dyn Event + Send + Sync)) {
+    fn handle_dyn(&self, server: &Arc<Server>, event: &(dyn Event + Send + Sync)) {
         if E::get_name_static() == event.get_name() {
             // Safely cast the event to the correct type and handle it.
             let event =
                 unsafe { &*std::ptr::from_ref::<dyn std::any::Any>(event.as_any()).cast::<E>() };
-            self.handler.handle(server, event).await;
+            self.handler.handle(server, event);
         }
     }
 
@@ -208,9 +200,9 @@ impl PluginManager {
     }
 
     /// Unload all loaded plugins
-    pub async fn unload_all_plugins(&self) -> Result<(), ManagerError> {
+    pub fn unload_all_plugins(&self) -> Result<(), ManagerError> {
         let plugin_names: Vec<String> = {
-            let plugins = self.plugins.read().await;
+            let plugins = self.plugins.read();
             plugins
                 .iter()
                 .filter(|p| p.is_active)
@@ -219,7 +211,7 @@ impl PluginManager {
         };
 
         for name in plugin_names {
-            if let Err(e) = self.unload_plugin(&name).await {
+            if let Err(e) = self.unload_plugin(&name) {
                 log::error!("Failed to unload plugin {name}: {e}");
             }
         }
@@ -228,49 +220,48 @@ impl PluginManager {
     }
 
     /// Add a new plugin loader implementation
-    pub async fn add_loader(&self, loader: Arc<dyn PluginLoader>) {
-        self.loaders.write().await.push(loader);
+    pub fn add_loader(&self, loader: Arc<dyn PluginLoader>) {
+        self.loaders.write().push(loader);
 
         // Try to load previously unloaded files with the new loader
-        self.retry_unloaded_files().await;
+        self.retry_unloaded_files();
     }
 
     /// Retry loading files that couldn't be loaded previously
-    async fn retry_unloaded_files(&self) {
-        let files_to_retry: Vec<PathBuf> =
-            { self.unloaded_files.read().await.iter().cloned().collect() };
+    fn retry_unloaded_files(&self) {
+        let files_to_retry: Vec<PathBuf> = { self.unloaded_files.read().iter().cloned().collect() };
         let mut retry_tasks = Vec::new();
 
         for path in files_to_retry {
-            if let Ok(task) = self.start_loading_plugin(&path).await {
+            if let Ok(task) = self.start_loading_plugin(&path) {
                 retry_tasks.push(task);
             }
         }
 
         // Wait for all retry tasks to complete
-        join_all(retry_tasks).await;
+        join_all(retry_tasks);
     }
 
     /// Set server reference for plugin context
-    pub async fn set_server(&self, server: Arc<Server>) {
-        let mut srv = self.server.write().await;
+    pub fn set_server(&self, server: Arc<Server>) {
+        let mut srv = self.server.write();
         srv.replace(server);
     }
 
     /// Set self reference for creating contexts
-    pub async fn set_self_ref(&self, self_ref: Arc<Self>) {
-        let mut sref = self.self_ref.write().await;
+    pub fn set_self_ref(&self, self_ref: Arc<Self>) {
+        let mut sref = self.self_ref.write();
         sref.replace(self_ref);
     }
 
     /// Get a clone of the loaders for context use
     #[must_use]
-    pub async fn get_loaders(&self) -> Vec<Arc<dyn PluginLoader>> {
-        self.loaders.read().await.clone()
+    pub fn get_loaders(&self) -> Vec<Arc<dyn PluginLoader>> {
+        self.loaders.read().clone()
     }
 
     /// Load all plugins from the plugin directory
-    pub async fn load_plugins(&self) -> Result<(), ManagerError> {
+    pub fn load_plugins(&self) -> Result<(), ManagerError> {
         const PLUGIN_DIR: &str = "./plugins";
         let path = Path::new(PLUGIN_DIR);
 
@@ -290,37 +281,35 @@ impl PluginManager {
             }
 
             // Start loading plugin concurrently
-            if let Ok(task) = self.start_loading_plugin(&path).await {
+            if let Ok(task) = self.start_loading_plugin(&path) {
                 load_tasks.push(task);
             }
         }
 
         // Wait for all plugins to complete loading (but don't block on individual plugin initialization)
-        join_all(load_tasks).await;
+        join_all(load_tasks);
 
         Ok(())
     }
 
     /// Start loading a plugin asynchronously
     #[allow(clippy::too_many_lines)]
-    async fn start_loading_plugin(
+    fn start_loading_plugin(
         &self,
         path: &Path,
     ) -> Result<tokio::task::JoinHandle<()>, ManagerError> {
-        for loader in self.loaders.read().await.iter() {
+        for loader in self.loaders.read().iter() {
             if loader.can_load(path) {
-                let (mut instance, metadata, loader_data) = loader.load(path).await?;
+                let (mut instance, metadata, loader_data) = loader.load(path)?;
 
                 // Mark plugin as loading
                 self.plugin_states
                     .write()
-                    .await
                     .insert(metadata.name.to_string(), PluginState::Loading);
 
                 let self_ref = self
                     .self_ref
                     .read()
-                    .await
                     .clone()
                     .ok_or(ManagerError::ServerNotInitialized)?;
 
@@ -330,7 +319,6 @@ impl PluginManager {
                         &self
                             .server
                             .read()
-                            .await
                             .clone()
                             .ok_or(ManagerError::ServerNotInitialized)?,
                     ),
@@ -350,13 +338,13 @@ impl PluginManager {
                 };
 
                 let plugin_index = {
-                    let mut plugins = self.plugins.write().await;
+                    let mut plugins = self.plugins.write();
                     plugins.push(plugin);
                     plugins.len() - 1
                 };
 
                 // Remove from unloaded files if it was there
-                self.unloaded_files.write().await.remove(path);
+                self.unloaded_files.write().remove(path);
 
                 // Spawn async task for plugin initialization
                 let self_ref_clone = Arc::clone(&self_ref);
@@ -366,11 +354,11 @@ impl PluginManager {
 
                 let task = tokio::spawn(async move {
                     // Initialize the plugin
-                    match instance.on_load(context.clone()).await {
+                    match instance.on_load(context.clone()) {
                         Ok(()) => {
                             // Update plugin state to loaded
                             {
-                                let mut plugins = self_ref_clone.plugins.write().await;
+                                let mut plugins = self_ref_clone.plugins.write();
                                 if let Some(plugin) = plugins.get_mut(plugin_index) {
                                     plugin.instance = Some(instance);
                                     plugin.is_active = true;
@@ -379,7 +367,6 @@ impl PluginManager {
                             self_ref_clone
                                 .plugin_states
                                 .write()
-                                .await
                                 .insert(plugin_name.clone(), PluginState::Loaded);
                             state_notify.notify_waiters();
 
@@ -388,11 +375,11 @@ impl PluginManager {
                         Err(e) => {
                             // Handle initialization failure
                             let error_msg = format!("Initialization failed: {e}");
-                            let _ = instance.on_unload(context).await;
+                            let _ = instance.on_unload(context);
 
                             // Get the loader data before removing the plugin
                             let loader_data: Option<Box<dyn Any + Send + Sync>> = {
-                                let mut plugins = self_ref_clone.plugins.write().await;
+                                let mut plugins = self_ref_clone.plugins.write();
                                 if let Some(plugin) = plugins.get_mut(plugin_index) {
                                     plugin.loader_data.take()
                                 } else {
@@ -403,17 +390,17 @@ impl PluginManager {
                             // Try to unload the plugin data
                             if let Some(data) = loader_data {
                                 tokio::spawn(async move {
-                                    loader_clone.unload(data).await.ok();
+                                    loader_clone.unload(data).ok();
                                 });
                             }
 
                             {
-                                let mut plugins = self_ref_clone.plugins.write().await;
+                                let mut plugins = self_ref_clone.plugins.write();
                                 if plugin_index < plugins.len() {
                                     plugins.remove(plugin_index);
                                 }
                             };
-                            self_ref_clone.plugin_states.write().await.insert(
+                            self_ref_clone.plugin_states.write().insert(
                                 plugin_name.clone(),
                                 PluginState::Failed(error_msg.clone()),
                             );
@@ -429,7 +416,7 @@ impl PluginManager {
         }
 
         // No loader could handle this file, track it for future attempts
-        self.unloaded_files.write().await.insert(path.to_path_buf());
+        self.unloaded_files.write().insert(path.to_path_buf());
 
         Err(ManagerError::PluginNotFound(
             path.to_string_lossy().to_string(),
@@ -437,8 +424,8 @@ impl PluginManager {
     }
 
     /// Attempt to load a single plugin file
-    pub async fn try_load_plugin(&self, path: &Path) -> Result<(), ManagerError> {
-        self.start_loading_plugin(path).await?.await.map_err(|e| {
+    pub fn try_load_plugin(&self, path: &Path) -> Result<(), ManagerError> {
+        self.start_loading_plugin(path)?.map_err(|e| {
             ManagerError::LoaderError(LoaderError::InitializationFailed(format!(
                 "Task join error: {e}"
             )))
@@ -446,9 +433,9 @@ impl PluginManager {
     }
 
     /// Wait for a plugin to finish loading
-    pub async fn wait_for_plugin(&self, plugin_name: &str) -> Result<(), ManagerError> {
+    pub fn wait_for_plugin(&self, plugin_name: &str) -> Result<(), ManagerError> {
         loop {
-            let state = self.plugin_states.read().await.get(plugin_name).cloned();
+            let state = self.plugin_states.read().get(plugin_name).cloned();
             if let Some(state) = state {
                 match state {
                     PluginState::Loaded => return Ok(()),
@@ -459,7 +446,7 @@ impl PluginManager {
                     }
                     PluginState::Loading => {
                         // Wait for state change notification
-                        self.state_notify.notified().await;
+                        self.state_notify.notified();
                         continue;
                     }
                 }
@@ -469,14 +456,14 @@ impl PluginManager {
     }
 
     /// Get the current state of a plugin
-    pub async fn get_plugin_state(&self, plugin_name: &str) -> Option<PluginState> {
-        self.plugin_states.read().await.get(plugin_name).cloned()
+    pub fn get_plugin_state(&self, plugin_name: &str) -> Option<PluginState> {
+        self.plugin_states.read().get(plugin_name).cloned()
     }
 
     /// Checks if plugin active
     #[must_use]
-    pub async fn is_plugin_active(&self, name: &str) -> bool {
-        let plugins = self.plugins.read().await;
+    pub fn is_plugin_active(&self, name: &str) -> bool {
+        let plugins = self.plugins.read();
         plugins
             .iter()
             .any(|p| p.metadata.name == name && p.is_active && p.instance.is_some())
@@ -484,8 +471,8 @@ impl PluginManager {
 
     /// Get list of active plugins
     #[must_use]
-    pub async fn active_plugins(&self) -> Vec<PluginMetadata<'static>> {
-        let plugins = self.plugins.read().await;
+    pub fn active_plugins(&self) -> Vec<PluginMetadata<'static>> {
+        let plugins = self.plugins.read();
         plugins
             .iter()
             .filter(|p| p.is_active && p.instance.is_some())
@@ -495,22 +482,22 @@ impl PluginManager {
 
     /// Checks if plugin loaded
     #[must_use]
-    pub async fn is_plugin_loaded(&self, name: &str) -> bool {
-        let plugins = self.plugins.read().await;
+    pub fn is_plugin_loaded(&self, name: &str) -> bool {
+        let plugins = self.plugins.read();
         plugins.iter().any(|p| p.metadata.name == name)
     }
 
     /// Get list of loaded plugins
     #[must_use]
-    pub async fn loaded_plugins(&self) -> Vec<PluginMetadata<'static>> {
-        let plugins = self.plugins.read().await;
+    pub fn loaded_plugins(&self) -> Vec<PluginMetadata<'static>> {
+        let plugins = self.plugins.read();
         plugins.iter().map(|p| p.metadata.clone()).collect()
     }
 
     /// Unload a plugin by name
-    pub async fn unload_plugin(&self, name: &str) -> Result<(), ManagerError> {
+    pub fn unload_plugin(&self, name: &str) -> Result<(), ManagerError> {
         let index = {
-            let plugins = self.plugins.read().await;
+            let plugins = self.plugins.read();
             plugins
                 .iter()
                 .position(|p| p.metadata.name == name)
@@ -518,32 +505,32 @@ impl PluginManager {
         };
 
         let mut plugin = {
-            let mut plugins = self.plugins.write().await;
+            let mut plugins = self.plugins.write();
             plugins.remove(index)
         };
 
         if let Some(mut instance) = plugin.instance.take() {
-            instance.on_unload(plugin.context.clone()).await.ok();
+            instance.on_unload(plugin.context.clone()).ok();
         }
 
         if plugin.loader.can_unload() {
             if let Some(data) = plugin.loader_data {
-                plugin.loader.unload(data).await?;
+                plugin.loader.unload(data)?;
             }
         } else {
             plugin.is_active = false;
-            self.plugins.write().await.push(plugin);
+            self.plugins.write().push(plugin);
         }
 
         // Remove from plugin states
-        self.plugin_states.write().await.remove(name);
+        self.plugin_states.write().remove(name);
 
         Ok(())
     }
 
     /// Get all plugins that are currently loading
-    pub async fn get_loading_plugins(&self) -> Vec<String> {
-        let plugin_states = self.plugin_states.read().await;
+    pub fn get_loading_plugins(&self) -> Vec<String> {
+        let plugin_states = self.plugin_states.read();
         plugin_states
             .iter()
             .filter(|(_, state)| matches!(state, PluginState::Loading))
@@ -552,8 +539,8 @@ impl PluginManager {
     }
 
     /// Get all plugins that failed to load
-    pub async fn get_failed_plugins(&self) -> Vec<(String, String)> {
-        let plugin_states = self.plugin_states.read().await;
+    pub fn get_failed_plugins(&self) -> Vec<(String, String)> {
+        let plugin_states = self.plugin_states.read();
         plugin_states
             .iter()
             .filter_map(|(name, state)| {
@@ -567,27 +554,27 @@ impl PluginManager {
     }
 
     /// Check if all plugins have finished loading (either succeeded or failed)
-    pub async fn all_plugins_loaded(&self) -> bool {
-        let plugin_states = self.plugin_states.read().await;
+    pub fn all_plugins_loaded(&self) -> bool {
+        let plugin_states = self.plugin_states.read();
         !plugin_states
             .values()
             .any(|state| matches!(state, PluginState::Loading))
     }
 
     /// Wait for all plugins to finish loading
-    pub async fn wait_for_all_plugins(&self) {
-        while !self.all_plugins_loaded().await {
-            self.state_notify.notified().await;
+    pub fn wait_for_all_plugins(&self) {
+        while !self.all_plugins_loaded() {
+            self.state_notify.notified();
         }
     }
 
     /// Register an event handler
-    pub async fn register<E, H>(&self, handler: Arc<H>, priority: EventPriority, blocking: bool)
+    pub fn register<E, H>(&self, handler: Arc<H>, priority: EventPriority, blocking: bool)
     where
         E: Event + Send + Sync + 'static,
         H: EventHandler<E> + 'static,
     {
-        let mut handlers = self.handlers.write().await;
+        let mut handlers = self.handlers.write();
         let typed_handler = TypedEventHandler {
             handler,
             priority,
@@ -602,16 +589,16 @@ impl PluginManager {
     }
 
     /// Fire an event to all registered handlers
-    pub async fn fire<E: Event + Send + Sync + 'static>(&self, mut event: E) -> E {
-        if let Some(server) = self.server.read().await.as_ref() {
-            let handlers = self.handlers.read().await;
+    pub fn fire<E: Event + Send + Sync + 'static>(&self, mut event: E) -> E {
+        if let Some(server) = self.server.read().as_ref() {
+            let handlers = self.handlers.read();
             if let Some(handlers) = handlers.get(&E::get_name_static()) {
                 let (blocking, non_blocking): (Vec<_>, Vec<_>) =
                     handlers.iter().partition(|h| h.is_blocking());
 
                 // Process blocking handlers first
                 for handler in blocking {
-                    handler.handle_blocking_dyn(server, &mut event).await;
+                    handler.handle_blocking_dyn(server, &mut event);
                 }
 
                 // Process non-blocking handlers
@@ -619,8 +606,7 @@ impl PluginManager {
                     non_blocking
                         .into_iter()
                         .map(|h| h.handle_dyn(server, &event)),
-                )
-                .await;
+                );
             }
         }
         event

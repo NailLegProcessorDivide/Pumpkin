@@ -1,5 +1,5 @@
 use crate::block::{BlockBehaviour, OnPlaceArgs};
-use async_trait::async_trait;
+
 use pumpkin_data::BlockDirection;
 use pumpkin_data::block_properties::Axis;
 use pumpkin_data::block_properties::BlockProperties;
@@ -9,9 +9,8 @@ use pumpkin_world::BlockStateId;
 #[pumpkin_block("minecraft:chain")]
 pub struct ChainBlock;
 
-#[async_trait]
 impl BlockBehaviour for ChainBlock {
-    async fn on_place(&self, args: OnPlaceArgs<'_>) -> BlockStateId {
+    fn on_place(&self, args: OnPlaceArgs<'_>) -> BlockStateId {
         let mut props = pumpkin_data::block_properties::ChainLikeProperties::default(args.block);
         props.r#waterlogged = args.replacing.water_source();
         props.r#axis = match args.direction {

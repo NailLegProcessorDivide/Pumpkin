@@ -4,7 +4,7 @@ use crate::block::{
     EmitsRedstonePowerArgs, GetRedstonePowerArgs, GetStateForNeighborUpdateArgs, OnPlaceArgs,
     OnScheduledTickArgs, OnStateReplacedArgs,
 };
-use async_trait::async_trait;
+
 use pumpkin_data::{
     Block, FacingExt,
     block_properties::{BlockProperties, ObserverLikeProperties},
@@ -21,65 +21,59 @@ use crate::{
 #[pumpkin_block("minecraft:observer")]
 pub struct ObserverBlock;
 
-#[async_trait]
 impl BlockBehaviour for ObserverBlock {
-    async fn on_place(&self, args: OnPlaceArgs<'_>) -> BlockStateId {
+    fn on_place(&self, args: OnPlaceArgs<'_>) -> BlockStateId {
         let mut props = ObserverLikeProperties::default(args.block);
         props.facing = args.player.living_entity.entity.get_facing();
         props.to_state_id(args.block)
     }
 
-    async fn on_neighbor_update(&self, _args: OnNeighborUpdateArgs<'_>) {}
+    fn on_neighbor_update(&self, _args: OnNeighborUpdateArgs<'_>) {}
 
-    async fn on_scheduled_tick(&self, args: OnScheduledTickArgs<'_>) {
-        let state = args.world.get_block_state(args.position).await;
+    fn on_scheduled_tick(&self, args: OnScheduledTickArgs<'_>) {
+        let state = args.world.get_block_state(args.position);
         let mut props = ObserverLikeProperties::from_state_id(state.id, args.block);
 
         if props.powered {
             props.powered = false;
-            args.world
-                .set_block_state(
-                    args.position,
-                    props.to_state_id(args.block),
-                    BlockFlags::NOTIFY_LISTENERS,
-                )
-                .await;
+            args.world.set_block_state(
+                args.position,
+                props.to_state_id(args.block),
+                BlockFlags::NOTIFY_LISTENERS,
+            );
         } else {
             props.powered = true;
+            args.world.set_block_state(
+                args.position,
+                props.to_state_id(args.block),
+                BlockFlags::NOTIFY_LISTENERS,
+            );
             args.world
-                .set_block_state(
-                    args.position,
-                    props.to_state_id(args.block),
-                    BlockFlags::NOTIFY_LISTENERS,
-                )
-                .await;
-            args.world
-                .schedule_block_tick(args.block, *args.position, 2, TickPriority::Normal)
-                .await;
+                .schedule_block_tick(args.block, *args.position, 2, TickPriority::Normal);
         }
 
-        Self::update_neighbors(args.world, args.block, args.position, &props).await;
+        Self::update_neighbors(args.world, args.block, args.position, &props);
     }
 
-    async fn get_state_for_neighbor_update(
+    fn get_state_for_neighbor_update(
         &self,
         args: GetStateForNeighborUpdateArgs<'_>,
     ) -> BlockStateId {
         let props = ObserverLikeProperties::from_state_id(args.state_id, args.block);
 
         if props.facing.to_block_direction() == args.direction && !props.powered {
-            Self::schedule_tick(args.world, args.position).await;
+            Self::schedule_tick(args.world, args.position);
         }
 
         args.state_id
     }
 
-    async fn emits_redstone_power(&self, args: EmitsRedstonePowerArgs<'_>) -> bool {
+    fn emits_redstone_power(&self, args: EmitsRedstonePowerArgs<'_>) -> bool {
         let props = ObserverLikeProperties::from_state_id(args.state.id, args.block);
         props.facing.to_block_direction() == args.direction
     }
 
-    async fn get_weak_redstone_power(&self, args: GetRedstonePowerArgs<'_>) -> u8 {
+    fn get_weak_redstone_power(&self, args: GetRedstonePowerArgs<'_>) -> u8 {
         let props = ObserverLikeProperties::from_state_id(args.state.id, args.block);
         if props.facing.to_block_direction() == args.direction && props.powered {
             15
@@ -88,27 +82,26 @@ impl BlockBehaviour for ObserverBlock {
         }
     }
 
-    async fn get_strong_redstone_power(&self, args: GetRedstonePowerArgs<'_>) -> u8 {
-        self.get_weak_redstone_power(args).await
+    fn get_strong_redstone_power(&self, args: GetRedstonePowerArgs<'_>) -> u8 {
+        self.get_weak_redstone_power(args)
     }
 
-    async fn on_state_replaced(&self, args: OnStateReplacedArgs<'_>) {
+    fn on_state_replaced(&self, args: OnStateReplacedArgs<'_>) {
         if !args.moved {
             let props = ObserverLikeProperties::from_state_id(args.old_state_id, args.block);
             if props.powered
                 && args
                     .world
                     .is_block_tick_scheduled(args.position, &Block::OBSERVER)
-                    .await
             {
-                Self::update_neighbors(args.world, args.block, args.position, &props).await;
+                Self::update_neighbors(args.world, args.block, args.position, &props);
             }
         }
     }
 }
 
 impl ObserverBlock {
-    async fn update_neighbors(
+    fn update_neighbors(
         world: &Arc<World>,
         block: &Block,
         block_pos: &BlockPos,
@@ -117,15 +110,11 @@ impl ObserverBlock {
         let facing = props.facing;
         let opposite_facing_pos =
             block_pos.offset(facing.to_block_direction().opposite().to_offset());
-        world.update_neighbor(&opposite_facing_pos, block).await;
-        world
-            .update_neighbors(&opposite_facing_pos, Some(facing.to_block_direction()))
-            .await;
+        world.update_neighbor(&opposite_facing_pos, block);
+        world.update_neighbors(&opposite_facing_pos, Some(facing.to_block_direction()));
     }
 
-    async fn schedule_tick(world: &World, block_pos: &BlockPos) {
-        world
-            .schedule_block_tick(&Block::OBSERVER, *block_pos, 2, TickPriority::Normal)
-            .await;
+    fn schedule_tick(world: &World, block_pos: &BlockPos) {
+        world.schedule_block_tick(&Block::OBSERVER, *block_pos, 2, TickPriority::Normal);
     }
 }

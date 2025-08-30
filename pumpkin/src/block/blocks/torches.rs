@@ -1,6 +1,6 @@
 use crate::block::BlockIsReplacing;
 use crate::entity::EntityBase;
-use async_trait::async_trait;
+
 use pumpkin_data::BlockDirection;
 use pumpkin_data::block_properties::{BlockProperties, Facing};
 use pumpkin_data::{Block, FacingExt, HorizontalFacingExt};
@@ -32,11 +32,10 @@ impl BlockMetadata for TorchBlock {
     }
 }
 
-#[async_trait]
 impl BlockBehaviour for TorchBlock {
-    async fn on_place(&self, args: OnPlaceArgs<'_>) -> BlockStateId {
+    fn on_place(&self, args: OnPlaceArgs<'_>) -> BlockStateId {
         if args.direction == BlockDirection::Down {
-            let support_block = args.world.get_block_state(&args.position.down()).await;
+            let support_block = args.world.get_block_state(&args.position.down());
             if support_block.is_center_solid(BlockDirection::Up) {
                 return args.block.default_state.id;
             }
@@ -55,7 +54,7 @@ impl BlockBehaviour for TorchBlock {
                 directions[0] = face;
             }
         } else if directions[0] == Facing::Down {
-            let support_block = args.world.get_block_state(&args.position.down()).await;
+            let support_block = args.world.get_block_state(&args.position.down());
             if support_block.is_center_solid(BlockDirection::Up) {
                 return args.block.default_state.id;
             }
@@ -64,7 +63,7 @@ impl BlockBehaviour for TorchBlock {
         for dir in directions {
             if dir != Facing::Up
                 && dir != Facing::Down
-                && can_place_at(args.world, args.position, dir.to_block_direction()).await
+                && can_place_at(args.world, args.position, dir.to_block_direction())
             {
                 let wall_block = if args.block == &Block::TORCH {
                     Block::WALL_TORCH
@@ -81,7 +80,7 @@ impl BlockBehaviour for TorchBlock {
             }
         }
 
-        let support_block = args.world.get_block_state(&args.position.down()).await;
+        let support_block = args.world.get_block_state(&args.position.down());
         if support_block.is_center_solid(BlockDirection::Up) {
             args.block.default_state.id
         } else {
@@ -89,35 +88,32 @@ impl BlockBehaviour for TorchBlock {
         }
     }
 
-    async fn can_place_at(&self, args: CanPlaceAtArgs<'_>) -> bool {
-        let support_block = args
-            .block_accessor
-            .get_block_state(&args.position.down())
-            .await;
+    fn can_place_at(&self, args: CanPlaceAtArgs<'_>) -> bool {
+        let support_block = args.block_accessor.get_block_state(&args.position.down());
         if support_block.is_center_solid(BlockDirection::Up) {
             return true;
         }
         for dir in BlockDirection::horizontal() {
-            if can_place_at(args.block_accessor, args.position, dir).await {
+            if can_place_at(args.block_accessor, args.position, dir) {
                 return true;
             }
         }
         false
     }
 
-    async fn get_state_for_neighbor_update(
+    fn get_state_for_neighbor_update(
         &self,
         args: GetStateForNeighborUpdateArgs<'_>,
     ) -> BlockStateId {
         if args.block == &Block::WALL_TORCH || args.block == &Block::SOUL_WALL_TORCH {
             let props = WallTorchProps::from_state_id(args.state_id, args.block);
             if props.facing.to_block_direction().opposite() == args.direction
-                && !can_place_at(args.world, args.position, props.facing.to_block_direction()).await
+                && !can_place_at(args.world, args.position, props.facing.to_block_direction())
             {
                 return 0;
             }
         } else if args.direction == BlockDirection::Down {
-            let support_block = args.world.get_block_state(&args.position.down()).await;
+            let support_block = args.world.get_block_state(&args.position.down());
             if !support_block.is_center_solid(BlockDirection::Up) {
                 return 0;
             }
@@ -126,13 +122,8 @@ impl BlockBehaviour for TorchBlock {
     }
 }
 
-async fn can_place_at(
-    world: &dyn BlockAccessor,
-    block_pos: &BlockPos,
-    facing: BlockDirection,
-) -> bool {
+fn can_place_at(world: &dyn BlockAccessor, block_pos: &BlockPos, facing: BlockDirection) -> bool {
     world
         .get_block_state(&block_pos.offset(facing.to_offset()))
-        .await
         .is_side_solid(facing.opposite())
 }

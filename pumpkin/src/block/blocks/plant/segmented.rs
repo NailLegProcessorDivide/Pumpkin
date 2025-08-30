@@ -1,4 +1,4 @@
-use async_trait::async_trait;
+
 use pumpkin_data::block_properties::{BlockProperties, HorizontalFacing, Integer1To4};
 use pumpkin_world::BlockStateId;
 
@@ -43,7 +43,7 @@ impl_segment_properties!(
     segment_amount
 );
 
-#[async_trait]
+
 pub trait Segmented: BlockBehaviour {
     type Properties: BlockProperties + SegmentProperties;
 
@@ -80,12 +80,12 @@ pub trait Segmented: BlockBehaviour {
         }
     }
 
-    async fn can_update_at(&self, ctx: CanUpdateAtArgs<'_>) -> bool {
+    fn can_update_at(&self, ctx: CanUpdateAtArgs<'_>) -> bool {
         let current_props = Self::Properties::from_state_id(ctx.state_id, ctx.block);
         self.can_add_segment(&current_props)
     }
 
-    async fn on_place(&self, ctx: OnPlaceArgs<'_>) -> BlockStateId {
+    fn on_place(&self, ctx: OnPlaceArgs<'_>) -> BlockStateId {
         if let BlockIsReplacing::Itself(existing_state_id) = ctx.replacing {
             let mut props = Self::Properties::from_state_id(existing_state_id, ctx.block);
 

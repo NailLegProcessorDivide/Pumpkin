@@ -1,4 +1,3 @@
-use async_trait::async_trait;
 use pumpkin_data::{
     Block,
     block_properties::{BlockProperties, WallTorchLikeProperties},
@@ -19,9 +18,8 @@ impl BlockMetadata for CarvedPumpkinBlock {
     }
 }
 
-#[async_trait]
 impl BlockBehaviour for CarvedPumpkinBlock {
-    async fn on_place(&self, args: OnPlaceArgs<'_>) -> BlockStateId {
+    fn on_place(&self, args: OnPlaceArgs<'_>) -> BlockStateId {
         let mut props = WallTorchLikeProperties::default(args.block);
         props.facing = args
             .player

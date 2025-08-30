@@ -20,7 +20,7 @@ impl Explosion {
     pub fn new(power: f32, pos: Vector3<f64>) -> Self {
         Self { power, pos }
     }
-    async fn get_blocks_to_destroy(
+    fn get_blocks_to_destroy(
         &self,
         world: &World,
     ) -> HashMap<BlockPos, (&'static Block, &'static BlockState)> {
@@ -49,7 +49,7 @@ impl Explosion {
                     let mut h = self.power * (0.7 + rand::random::<f32>() * 0.6);
                     while h > 0.0 {
                         let block_pos = BlockPos::floored(pos_x, pos_y, pos_z);
-                        let (block, state) = world.get_block_and_state(&block_pos).await;
+                        let (block, state) = world.get_block_and_state(&block_pos);
 
                         // if !world.is_in_build_limit(&block_pos) {
                         //     // Pass by reference
@@ -73,8 +73,8 @@ impl Explosion {
         map
     }
 
-    pub async fn explode(&self, world: &Arc<World>) {
-        let blocks = self.get_blocks_to_destroy(world).await;
+    pub fn explode(&self, world: &Arc<World>) {
+        let blocks = self.get_blocks_to_destroy(world);
         // TODO: Entity damage, fire
         for (pos, (block, state)) in blocks {
             if state.is_air() {
@@ -82,7 +82,7 @@ impl Explosion {
             }
             let pumpkin_block = world.block_registry.get_pumpkin_block(block);
 
-            world.set_block_state(&pos, 0, BlockFlags::NOTIFY_ALL).await;
+            world.set_block_state(&pos, 0, BlockFlags::NOTIFY_ALL);
 
             if pumpkin_block.is_none_or(|s| s.should_drop_items_on_explosion()) {
                 let params = LootContextParameters {
@@ -90,16 +90,14 @@ impl Explosion {
                     explosion_radius: Some(self.power),
                     ..Default::default()
                 };
-                drop_loot(world, block, &pos, false, params).await;
+                drop_loot(world, block, &pos, false, params);
             }
             if let Some(pumpkin_block) = pumpkin_block {
-                pumpkin_block
-                    .explode(ExplodeArgs {
-                        world,
-                        block,
-                        position: &pos,
-                    })
-                    .await;
+                pumpkin_block.explode(ExplodeArgs {
+                    world,
+                    block,
+                    position: &pos,
+                });
             }
         }
     }

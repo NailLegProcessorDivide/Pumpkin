@@ -1,7 +1,7 @@
 use crate::entity::player::Player;
 use crate::item::{ItemBehaviour, ItemMetadata};
 use crate::server::Server;
-use async_trait::async_trait;
+
 use pumpkin_data::BlockDirection;
 use pumpkin_data::block_properties::BlockProperties;
 use pumpkin_data::block_properties::{OakDoorLikeProperties, PaleOakWoodLikeProperties};
@@ -19,10 +19,10 @@ impl ItemMetadata for AxeItem {
     }
 }
 
-#[async_trait]
+
 impl ItemBehaviour for AxeItem {
     #[allow(clippy::too_many_lines)]
-    async fn use_on_block(
+    fn use_on_block(
         &self,
         _item: &mut ItemStack,
         player: &Player,
@@ -40,7 +40,7 @@ impl ItemBehaviour for AxeItem {
         if replacement_block != 0 {
             let new_block = &Block::from_id(replacement_block);
             let new_state_id = if block.is_tagged_with_by_tag(&tag::Block::MINECRAFT_LOGS) {
-                let log_information = world.get_block_state_id(&location).await;
+                let log_information = world.get_block_state_id(&location);
                 let log_props = PaleOakWoodLikeProperties::from_state_id(log_information, block);
                 // create new properties for the new log.
                 let mut new_log_properties = PaleOakWoodLikeProperties::default(new_block);
@@ -55,7 +55,7 @@ impl ItemBehaviour for AxeItem {
             // Let's check if It's a door
             else if block.is_tagged_with_by_tag(&tag::Block::MINECRAFT_DOORS) {
                 // get block state of the old log.
-                let door_information = world.get_block_state_id(&location).await;
+                let door_information = world.get_block_state_id(&location);
                 // get the log properties
                 let door_props = OakDoorLikeProperties::from_state_id(door_information, block);
                 // create new properties for the new log.
@@ -73,7 +73,7 @@ impl ItemBehaviour for AxeItem {
             // TODO Implements trapdoors when It's implemented
             world
                 .set_block_state(&location, new_state_id, BlockFlags::NOTIFY_ALL)
-                .await;
+                ;
             return;
         }
     }

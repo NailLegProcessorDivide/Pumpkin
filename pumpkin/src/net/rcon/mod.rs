@@ -6,16 +6,20 @@ use std::sync::Arc;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     select,
+    sync::mpsc::{self, Sender},
 };
 
-use crate::{SHOULD_STOP, STOP_INTERRUPT, server::Server};
+use crate::{SHOULD_STOP, STOP_INTERRUPT, net::net_thread::NetResponse};
 
 mod packet;
 
 pub struct RCONServer;
 
 impl RCONServer {
-    pub async fn run(config: &RCONConfig, server: Arc<Server>) -> Result<(), std::io::Error> {
+    pub async fn run(
+        config: &RCONConfig,
+        server: Sender<NetResponse>,
+    ) -> Result<(), std::io::Error> {
         let listener = tokio::net::TcpListener::bind(config.address).await.unwrap();
 
         let password = Arc::new(config.password.clone());
@@ -46,8 +50,8 @@ impl RCONServer {
             let mut client = RCONClient::new(connection, address);
 
             let password = password.clone();
-            let server = server.clone();
-            tokio::spawn(async move { while !client.handle(&server, &password).await {} });
+            let sender = server.clone();
+            tokio::spawn(async move { while !client.handle(&sender, &password).await {} });
             log::debug!("closed RCON connection");
             connections -= 1;
         }
@@ -76,7 +80,7 @@ impl RCONClient {
     }
 
     /// Returns whether the client is closed or not.
-    pub async fn handle(&mut self, server: &Arc<Server>, password: &str) -> bool {
+    pub async fn handle(&mut self, server: &Sender<NetResponse>, password: &str) -> bool {
         if !self.closed {
             match self.read_bytes().await {
                 // The stream is closed, so we can't reply, so we just close everything.
@@ -96,7 +100,11 @@ impl RCONClient {
         self.closed
     }
 
-    async fn poll(&mut self, server: &Arc<Server>, password: &str) -> Result<(), PacketError> {
+    async fn poll(
+        &mut self,
+        server: &Sender<NetResponse>,
+        password: &str,
+    ) -> Result<(), PacketError> {
         let Some(packet) = self.receive_packet().await? else {
             return Ok(());
         };
@@ -120,34 +128,36 @@ impl RCONClient {
             }
             ServerboundPacket::ExecCommand => {
                 if self.logged_in {
-                    let output = Arc::new(tokio::sync::Mutex::new(Vec::<String>::new()));
-
-                    let server_clone = server.clone();
-                    let output_clone = output.clone();
-                    let packet_body = packet.get_body().to_owned();
-                    tokio::spawn(async move {
-                        server_clone
-                            .command_dispatcher
-                            .read()
-                            .await
-                            .handle_command(
-                                &mut crate::command::CommandSender::Rcon(output_clone),
-                                &server_clone,
-                                &packet_body,
-                            )
-                            .await;
-                    });
-
-                    let output = output.lock().await;
-                    for line in output.iter() {
-                        if config.logging.commands {
-                            log::info!("RCON ({}): {}", self.address, line);
-                        }
-                        self.send(ClientboundPacket::Output, packet.get_id(), line)
-                            .await?;
-                    }
+                    self.exec_command(server, config, packet).await?
                 }
             }
+        }
+        Ok(())
+    }
+
+    async fn exec_command(
+        &mut self,
+        server: &Sender<NetResponse>,
+        config: &RCONConfig,
+        packet: Packet,
+    ) -> Result<(), PacketError> {
+        let packet_body = packet.get_body().to_owned();
+        let (command_tx, mut command_rx) = mpsc::channel(10);
+        server
+            .send(NetResponse::Command(packet_body, command_tx))
+            .await;
+        // server_clone.command_dispatcher.read().handle_command(
+        //     &mut crate::command::CommandSender::Rcon(output_clone),
+        //     &server_clone,
+        //     &packet_body,
+        // );
+
+        while let Some(line) = command_rx.recv().await {
+            if config.logging.commands {
+                log::info!("RCON ({}): {}", self.address, &line);
+            }
+            self.send(ClientboundPacket::Output, packet.get_id(), &line)
+                .await?;
         }
         Ok(())
     }

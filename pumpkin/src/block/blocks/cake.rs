@@ -9,7 +9,7 @@ use crate::{
     entity::player::Player,
     world::World,
 };
-use async_trait::async_trait;
+
 use pumpkin_data::item::Item;
 use pumpkin_data::{
     Block,
@@ -25,7 +25,7 @@ use rand::{Rng, rng};
 pub struct CakeBlock;
 
 impl CakeBlock {
-    pub async fn consume_if_hungry(
+    pub fn consume_if_hungry(
         world: &Arc<World>,
         player: &Player,
         block: &Block,
@@ -43,7 +43,7 @@ impl CakeBlock {
                     .hunger_manager
                     .saturation
                     .store(player.hunger_manager.saturation.load() + 0.4);
-                player.send_health().await;
+                player.send_health();
             }
             GameMode::Creative | GameMode::Spectator => {}
         }
@@ -52,23 +52,19 @@ impl CakeBlock {
         match properties.bites.to_index() {
             0..=5 => {
                 properties.bites = Integer0To6::from_index(properties.bites.to_index() + 1);
-                world
-                    .set_block_state(
-                        location,
-                        properties.to_state_id(block),
-                        BlockFlags::NOTIFY_ALL,
-                    )
-                    .await;
+                world.set_block_state(
+                    location,
+                    properties.to_state_id(block),
+                    BlockFlags::NOTIFY_ALL,
+                );
                 BlockActionResult::Consume
             }
             6 => {
-                world
-                    .set_block_state(
-                        location,
-                        Block::AIR.default_state.id,
-                        BlockFlags::NOTIFY_ALL,
-                    )
-                    .await;
+                world.set_block_state(
+                    location,
+                    Block::AIR.default_state.id,
+                    BlockFlags::NOTIFY_ALL,
+                );
                 BlockActionResult::Consume
             }
             _ => {
@@ -78,12 +74,11 @@ impl CakeBlock {
     }
 }
 
-#[async_trait]
 impl BlockBehaviour for CakeBlock {
-    async fn use_with_item(&self, args: UseWithItemArgs<'_>) -> BlockActionResult {
-        let state_id = args.world.get_block_state_id(args.position).await;
+    fn use_with_item(&self, args: UseWithItemArgs<'_>) -> BlockActionResult {
+        let state_id = args.world.get_block_state_id(args.position);
         let properties = CakeLikeProperties::from_state_id(state_id, args.block);
-        let item_lock = args.item_stack.lock().await;
+        let item_lock = args.item_stack.lock();
         let item = item_lock.item;
         drop(item_lock);
         match item.id {
@@ -95,33 +90,28 @@ impl BlockBehaviour for CakeBlock {
                         args.block,
                         args.position,
                         state_id,
-                    )
-                    .await;
+                    );
                 }
 
                 if args.player.gamemode.load() != GameMode::Creative {
                     let held_item = args.player.inventory.held_item();
-                    let mut held_item_guard = held_item.lock().await;
+                    let mut held_item_guard = held_item.lock();
                     held_item_guard.decrement(1);
                 }
-                args.world
-                    .set_block_state(
-                        args.position,
-                        cake_from_candle(item).default_state.id,
-                        BlockFlags::NOTIFY_ALL,
-                    )
-                    .await;
+                args.world.set_block_state(
+                    args.position,
+                    cake_from_candle(item).default_state.id,
+                    BlockFlags::NOTIFY_ALL,
+                );
                 let seed: f64 = rng().random();
-                args.player
-                    .play_sound(
-                        Sound::BlockCakeAddCandle as u16,
-                        SoundCategory::Blocks,
-                        &args.position.to_f64(),
-                        1.0,
-                        1.0,
-                        seed,
-                    )
-                    .await;
+                args.player.play_sound(
+                    Sound::BlockCakeAddCandle as u16,
+                    SoundCategory::Blocks,
+                    &args.position.to_f64(),
+                    1.0,
+                    1.0,
+                    seed,
+                );
                 return BlockActionResult::Consume;
             }
             _ => {
@@ -131,14 +121,13 @@ impl BlockBehaviour for CakeBlock {
                     args.block,
                     args.position,
                     state_id,
-                )
-                .await;
+                );
             }
         }
     }
 
-    async fn normal_use(&self, args: NormalUseArgs<'_>) -> BlockActionResult {
-        let state_id = args.world.get_block_state_id(args.position).await;
-        Self::consume_if_hungry(args.world, args.player, args.block, args.position, state_id).await
+    fn normal_use(&self, args: NormalUseArgs<'_>) -> BlockActionResult {
+        let state_id = args.world.get_block_state_id(args.position);
+        Self::consume_if_hungry(args.world, args.player, args.block, args.position, state_id)
     }
 }

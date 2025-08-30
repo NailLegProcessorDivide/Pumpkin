@@ -6,7 +6,7 @@ use crate::block::{
 };
 use crate::entity::Entity;
 use crate::entity::item::ItemEntity;
-use async_trait::async_trait;
+
 use pumpkin_data::FacingExt;
 use pumpkin_data::block_properties::{BlockProperties, Facing};
 use pumpkin_data::entity::EntityType;
@@ -25,14 +25,13 @@ use pumpkin_world::tick::TickPriority;
 use pumpkin_world::world::BlockFlags;
 use rand::{Rng, rng};
 use std::sync::Arc;
-use tokio::sync::Mutex;
+use parking_lot::Mutex;
 use uuid::Uuid;
 
 struct DropperScreenFactory(Arc<dyn Inventory>);
 
-#[async_trait]
 impl ScreenHandlerFactory for DropperScreenFactory {
-    async fn create_screen_handler(
+    fn create_screen_handler(
         &self,
         sync_id: u8,
         player_inventory: &Arc<PlayerInventory>,
@@ -81,89 +80,76 @@ const fn to_data3d(facing: Facing) -> i32 {
     }
 }
 
-#[async_trait]
 impl BlockBehaviour for DropperBlock {
-    async fn normal_use(&self, args: NormalUseArgs<'_>) -> BlockActionResult {
-        if let Some(block_entity) = args.world.get_block_entity(args.position).await
+    fn normal_use(&self, args: NormalUseArgs<'_>) -> BlockActionResult {
+        if let Some(block_entity) = args.world.get_block_entity(args.position)
             && let Some(inventory) = block_entity.get_inventory()
         {
             args.player
-                .open_handled_screen(&DropperScreenFactory(inventory))
-                .await;
+                .open_handled_screen(&DropperScreenFactory(inventory));
         }
         BlockActionResult::Success
     }
 
-    async fn on_place(&self, args: OnPlaceArgs<'_>) -> BlockStateId {
+    fn on_place(&self, args: OnPlaceArgs<'_>) -> BlockStateId {
         let mut props = DispenserLikeProperties::default(args.block);
         props.facing = args.player.living_entity.entity.get_facing().opposite();
         props.to_state_id(args.block)
     }
 
-    async fn placed(&self, args: PlacedArgs<'_>) {
+    fn placed(&self, args: PlacedArgs<'_>) {
         let dropper_block_entity = DropperBlockEntity::new(*args.position);
-        args.world
-            .add_block_entity(Arc::new(dropper_block_entity))
-            .await;
+        args.world.add_block_entity(Arc::new(dropper_block_entity));
     }
 
-    async fn on_neighbor_update(&self, args: OnNeighborUpdateArgs<'_>) {
-        let powered = block_receives_redstone_power(args.world, args.position).await
-            || block_receives_redstone_power(args.world, &args.position.up()).await;
+    fn on_neighbor_update(&self, args: OnNeighborUpdateArgs<'_>) {
+        let powered = block_receives_redstone_power(args.world, args.position)
+            || block_receives_redstone_power(args.world, &args.position.up());
         let mut props = DispenserLikeProperties::from_state_id(
-            args.world.get_block_state(args.position).await.id,
+            args.world.get_block_state(args.position).id,
             args.block,
         );
         if powered && !props.triggered {
             args.world
-                .schedule_block_tick(args.block, *args.position, 4, TickPriority::Normal)
-                .await;
+                .schedule_block_tick(args.block, *args.position, 4, TickPriority::Normal);
             props.triggered = true;
-            args.world
-                .set_block_state(
-                    args.position,
-                    props.to_state_id(args.block),
-                    BlockFlags::NOTIFY_LISTENERS,
-                )
-                .await;
+            args.world.set_block_state(
+                args.position,
+                props.to_state_id(args.block),
+                BlockFlags::NOTIFY_LISTENERS,
+            );
         } else if !powered && props.triggered {
             props.triggered = false;
-            args.world
-                .set_block_state(
-                    args.position,
-                    props.to_state_id(args.block),
-                    BlockFlags::NOTIFY_LISTENERS,
-                )
-                .await;
+            args.world.set_block_state(
+                args.position,
+                props.to_state_id(args.block),
+                BlockFlags::NOTIFY_LISTENERS,
+            );
         }
     }
 
-    async fn on_scheduled_tick(&self, args: OnScheduledTickArgs<'_>) {
-        if let Some(block_entity) = args.world.get_block_entity(args.position).await {
+    fn on_scheduled_tick(&self, args: OnScheduledTickArgs<'_>) {
+        if let Some(block_entity) = args.world.get_block_entity(args.position) {
             let dropper = block_entity
                 .as_any()
                 .downcast_ref::<DropperBlockEntity>()
                 .unwrap();
-            if let Some(mut item) = dropper.get_random_slot().await {
+            if let Some(mut item) = dropper.get_random_slot() {
                 let props = DispenserLikeProperties::from_state_id(
-                    args.world.get_block_state(args.position).await.id,
+                    args.world.get_block_state(args.position).id,
                     args.block,
                 );
-                if let Some(entity) = args
-                    .world
-                    .get_block_entity(
-                        &args
-                            .position
-                            .offset(props.facing.to_block_direction().to_offset()),
-                    )
-                    .await
-                    && let Some(container) = entity.get_inventory()
+                if let Some(entity) = args.world.get_block_entity(
+                    &args
+                        .position
+                        .offset(props.facing.to_block_direction().to_offset()),
+                ) && let Some(container) = entity.get_inventory()
                 {
                     // TODO check WorldlyContainer
                     let mut is_full = true;
                     for i in 0..container.size() {
-                        let bind = container.get_stack(i).await;
-                        let item = bind.lock().await;
+                        let bind = container.get_stack(i);
+                        let item = bind.lock();
                         if item.item_count < item.get_max_stack_size() {
                             is_full = false;
                             break;
@@ -175,8 +161,7 @@ impl BlockBehaviour for DropperBlock {
                     //TODO WorldlyContainer
                     let backup = item.clone();
                     let one_item = item.split(1);
-                    if HopperBlockEntity::add_one_item(dropper, container.as_ref(), one_item).await
-                    {
+                    if HopperBlockEntity::add_one_item(dropper, container.as_ref(), one_item) {
                         return;
                     }
                     *item = backup;
@@ -202,23 +187,20 @@ impl BlockBehaviour for DropperBlock {
                     triangle(&mut rng(), 0.2, 0.017_227_5 * 6.),
                     triangle(&mut rng(), facing.z * rd, 0.017_227_5 * 6.),
                 );
-                let item_entity =
-                    Arc::new(ItemEntity::new_with_velocity(entity, drop_item, velocity, 40).await);
-                args.world.spawn_entity(item_entity).await;
+                let item_entity = Arc::new(ItemEntity::new_with_velocity(
+                    entity, drop_item, velocity, 40,
+                ));
+                args.world.spawn_entity(item_entity);
                 args.world
-                    .sync_world_event(WorldEvent::DispenserDispenses, *args.position, 0)
-                    .await;
-                args.world
-                    .sync_world_event(
-                        WorldEvent::DispenserActivated,
-                        *args.position,
-                        to_data3d(props.facing),
-                    )
-                    .await;
+                    .sync_world_event(WorldEvent::DispenserDispenses, *args.position, 0);
+                args.world.sync_world_event(
+                    WorldEvent::DispenserActivated,
+                    *args.position,
+                    to_data3d(props.facing),
+                );
             } else {
                 args.world
-                    .sync_world_event(WorldEvent::DispenserFails, *args.position, 0)
-                    .await;
+                    .sync_world_event(WorldEvent::DispenserFails, *args.position, 0);
             }
         }
     }

@@ -8,7 +8,7 @@ use crate::{
     data::{banned_ip_data::BANNED_IP_LIST, banned_player_data::BANNED_PLAYER_LIST},
 };
 use CommandError::InvalidConsumption;
-use async_trait::async_trait;
+
 use pumpkin_util::text::TextComponent;
 
 const NAMES: [&str; 1] = ["banlist"];
@@ -18,9 +18,9 @@ const ARG_LIST_TYPE: &str = "ips|players";
 
 struct ListExecutor;
 
-#[async_trait]
+
 impl CommandExecutor for ListExecutor {
-    async fn execute<'a>(
+    fn execute<'a>(
         &self,
         sender: &mut CommandSender,
         _server: &crate::server::Server,
@@ -32,7 +32,7 @@ impl CommandExecutor for ListExecutor {
 
         match *list_type {
             "ips" => {
-                let lock = &BANNED_IP_LIST.read().await;
+                let lock = &BANNED_IP_LIST.read();
                 let entries = lock
                     .banned_ips
                     .iter()
@@ -45,10 +45,10 @@ impl CommandExecutor for ListExecutor {
                     })
                     .collect();
 
-                handle_banlist(entries, sender).await;
+                handle_banlist(entries, sender);
             }
             "players" => {
-                let lock = &BANNED_PLAYER_LIST.read().await;
+                let lock = &BANNED_PLAYER_LIST.read();
                 let entries = lock
                     .banned_players
                     .iter()
@@ -61,7 +61,7 @@ impl CommandExecutor for ListExecutor {
                     })
                     .collect();
 
-                handle_banlist(entries, sender).await;
+                handle_banlist(entries, sender);
             }
             _ => {
                 return Err(CommandError::CommandFailed(Box::new(TextComponent::text(
@@ -76,16 +76,16 @@ impl CommandExecutor for ListExecutor {
 
 struct ListAllExecutor;
 
-#[async_trait]
+
 impl CommandExecutor for ListAllExecutor {
-    async fn execute<'a>(
+    fn execute<'a>(
         &self,
         sender: &mut CommandSender,
         _server: &crate::server::Server,
         _args: &ConsumedArgs<'a>,
     ) -> Result<(), CommandError> {
         let mut entries = Vec::new();
-        for entry in &BANNED_PLAYER_LIST.read().await.banned_players {
+        for entry in &BANNED_PLAYER_LIST.read().banned_players {
             entries.push((
                 entry.name.clone(),
                 entry.source.clone(),
@@ -93,7 +93,7 @@ impl CommandExecutor for ListAllExecutor {
             ));
         }
 
-        for entry in &BANNED_IP_LIST.read().await.banned_ips {
+        for entry in &BANNED_IP_LIST.read().banned_ips {
             entries.push((
                 entry.ip.to_string(),
                 entry.source.clone(),
@@ -101,38 +101,32 @@ impl CommandExecutor for ListAllExecutor {
             ));
         }
 
-        handle_banlist(entries, sender).await;
+        handle_banlist(entries, sender);
         Ok(())
     }
 }
 
 /// `Vec<(name, source, reason)>`
-async fn handle_banlist(list: Vec<(String, String, String)>, sender: &CommandSender) {
+fn handle_banlist(list: Vec<(String, String, String)>, sender: &CommandSender) {
     if list.is_empty() {
-        sender
-            .send_message(TextComponent::translate("commands.banlist.none", []))
-            .await;
+        sender.send_message(TextComponent::translate("commands.banlist.none", []));
         return;
     }
 
-    sender
-        .send_message(TextComponent::translate(
-            "commands.banlist.list",
-            [TextComponent::text(list.len().to_string())],
-        ))
-        .await;
+    sender.send_message(TextComponent::translate(
+        "commands.banlist.list",
+        [TextComponent::text(list.len().to_string())],
+    ));
 
     for (name, source, reason) in list {
-        sender
-            .send_message(TextComponent::translate(
-                "commands.banlist.entry",
-                [
-                    TextComponent::text(name),
-                    TextComponent::text(source),
-                    TextComponent::text(reason),
-                ],
-            ))
-            .await;
+        sender.send_message(TextComponent::translate(
+            "commands.banlist.entry",
+            [
+                TextComponent::text(name),
+                TextComponent::text(source),
+                TextComponent::text(reason),
+            ],
+        ));
     }
 }
 

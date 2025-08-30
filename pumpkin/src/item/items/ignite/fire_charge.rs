@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use async_trait::async_trait;
+
 use pumpkin_data::Block;
 use pumpkin_data::BlockDirection;
 use pumpkin_data::item::Item;
@@ -24,9 +24,9 @@ impl ItemMetadata for FireChargeItem {
     }
 }
 
-#[async_trait]
+
 impl ItemBehaviour for FireChargeItem {
-    async fn use_on_block(
+    fn use_on_block(
         &self,
         _item: &mut ItemStack,
         player: &Player,
@@ -37,21 +37,16 @@ impl ItemBehaviour for FireChargeItem {
     ) {
         Ignition::ignite_block(
             |world: Arc<World>, pos: BlockPos, new_state_id: u16| async move {
-                world
-                    .set_block_state(&pos, new_state_id, BlockFlags::NOTIFY_ALL)
-                    .await;
+                world.set_block_state(&pos, new_state_id, BlockFlags::NOTIFY_ALL);
 
-                world
-                    .play_block_sound(Sound::ItemFirechargeUse, SoundCategory::Blocks, pos)
-                    .await;
+                world.play_block_sound(Sound::ItemFirechargeUse, SoundCategory::Blocks, pos);
             },
             player,
             location,
             face,
             _block,
             _server,
-        )
-        .await;
+        );
     }
 
     fn as_any(&self) -> &dyn std::any::Any {

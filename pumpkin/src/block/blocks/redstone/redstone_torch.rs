@@ -11,7 +11,7 @@ use crate::block::OnScheduledTickArgs;
 use crate::block::OnStateReplacedArgs;
 use crate::block::PlacedArgs;
 use crate::entity::EntityBase;
-use async_trait::async_trait;
+
 use pumpkin_data::Block;
 use pumpkin_data::BlockDirection;
 use pumpkin_data::FacingExt;
@@ -44,15 +44,14 @@ impl BlockMetadata for RedstoneTorchBlock {
     }
 }
 
-#[async_trait]
 impl BlockBehaviour for RedstoneTorchBlock {
-    async fn on_place(&self, args: OnPlaceArgs<'_>) -> BlockStateId {
+    fn on_place(&self, args: OnPlaceArgs<'_>) -> BlockStateId {
         let world = args.world;
         let block = args.block;
         let location = args.position;
 
         if args.direction == BlockDirection::Down {
-            let support_block = world.get_block_state(&location.down()).await;
+            let support_block = world.get_block_state(&location.down());
             if support_block.is_center_solid(BlockDirection::Up) {
                 return block.default_state.id;
             }
@@ -71,7 +70,7 @@ impl BlockBehaviour for RedstoneTorchBlock {
                 directions[0] = face;
             }
         } else if directions[0] == Facing::Down {
-            let support_block = world.get_block_state(&location.down()).await;
+            let support_block = world.get_block_state(&location.down());
             if support_block.is_center_solid(BlockDirection::Up) {
                 return block.default_state.id;
             }
@@ -80,7 +79,7 @@ impl BlockBehaviour for RedstoneTorchBlock {
         for dir in directions {
             if dir != Facing::Up
                 && dir != Facing::Down
-                && can_place_at(world, location, dir.to_block_direction()).await
+                && can_place_at(world, location, dir.to_block_direction())
             {
                 let mut torch_props = RWallTorchProps::default(&Block::REDSTONE_WALL_TORCH);
                 torch_props.facing = dir
@@ -92,7 +91,7 @@ impl BlockBehaviour for RedstoneTorchBlock {
             }
         }
 
-        let support_block = world.get_block_state(&location.down()).await;
+        let support_block = world.get_block_state(&location.down());
         if support_block.is_center_solid(BlockDirection::Up) {
             block.default_state.id
         } else {
@@ -100,23 +99,20 @@ impl BlockBehaviour for RedstoneTorchBlock {
         }
     }
 
-    async fn can_place_at(&self, args: CanPlaceAtArgs<'_>) -> bool {
-        let support_block = args
-            .block_accessor
-            .get_block_state(&args.position.down())
-            .await;
+    fn can_place_at(&self, args: CanPlaceAtArgs<'_>) -> bool {
+        let support_block = args.block_accessor.get_block_state(&args.position.down());
         if support_block.is_center_solid(BlockDirection::Up) {
             return true;
         }
         for dir in BlockDirection::horizontal() {
-            if can_place_at(args.block_accessor, args.position, dir).await {
+            if can_place_at(args.block_accessor, args.position, dir) {
                 return true;
             }
         }
         false
     }
 
-    async fn get_state_for_neighbor_update(
+    fn get_state_for_neighbor_update(
         &self,
         args: GetStateForNeighborUpdateArgs<'_>,
     ) -> BlockStateId {
@@ -128,12 +124,11 @@ impl BlockBehaviour for RedstoneTorchBlock {
                     args.position,
                     props.facing.to_block_direction().opposite(),
                 )
-                .await
             {
                 return 0;
             }
         } else if args.direction == BlockDirection::Down {
-            let support_block = args.world.get_block_state(&args.position.down()).await;
+            let support_block = args.world.get_block_state(&args.position.down());
             if !support_block.is_center_solid(BlockDirection::Up) {
                 return 0;
             }
@@ -141,13 +136,12 @@ impl BlockBehaviour for RedstoneTorchBlock {
         args.state_id
     }
 
-    async fn on_neighbor_update(&self, args: OnNeighborUpdateArgs<'_>) {
-        let state = args.world.get_block_state(args.position).await;
+    fn on_neighbor_update(&self, args: OnNeighborUpdateArgs<'_>) {
+        let state = args.world.get_block_state(args.position);
 
         if args
             .world
             .is_block_tick_scheduled(args.position, args.block)
-            .await
         {
             return;
         }
@@ -160,27 +154,24 @@ impl BlockBehaviour for RedstoneTorchBlock {
                     args.position,
                     props.facing.to_block_direction().opposite(),
                 )
-                .await
             {
                 args.world
-                    .schedule_block_tick(args.block, *args.position, 2, TickPriority::Normal)
-                    .await;
+                    .schedule_block_tick(args.block, *args.position, 2, TickPriority::Normal);
             }
         } else if args.block == &Block::REDSTONE_TORCH {
             let props = RTorchProps::from_state_id(state.id, args.block);
-            if props.lit != should_be_lit(args.world, args.position, BlockDirection::Down).await {
+            if props.lit != should_be_lit(args.world, args.position, BlockDirection::Down) {
                 args.world
-                    .schedule_block_tick(args.block, *args.position, 2, TickPriority::Normal)
-                    .await;
+                    .schedule_block_tick(args.block, *args.position, 2, TickPriority::Normal);
             }
         }
     }
 
-    async fn emits_redstone_power(&self, _args: EmitsRedstonePowerArgs<'_>) -> bool {
+    fn emits_redstone_power(&self, _args: EmitsRedstonePowerArgs<'_>) -> bool {
         true
     }
 
-    async fn get_weak_redstone_power(&self, args: GetRedstonePowerArgs<'_>) -> u8 {
+    fn get_weak_redstone_power(&self, args: GetRedstonePowerArgs<'_>) -> u8 {
         if args.block == &Block::REDSTONE_WALL_TORCH {
             let props = RWallTorchProps::from_state_id(args.state.id, args.block);
             if props.lit && args.direction != props.facing.to_block_direction() {
@@ -195,7 +186,7 @@ impl BlockBehaviour for RedstoneTorchBlock {
         0
     }
 
-    async fn get_strong_redstone_power(&self, args: GetRedstonePowerArgs<'_>) -> u8 {
+    fn get_strong_redstone_power(&self, args: GetRedstonePowerArgs<'_>) -> u8 {
         if args.direction == BlockDirection::Down {
             if args.block == &Block::REDSTONE_WALL_TORCH {
                 let props = RWallTorchProps::from_state_id(args.state.id, args.block);
@@ -212,74 +203,63 @@ impl BlockBehaviour for RedstoneTorchBlock {
         0
     }
 
-    async fn on_scheduled_tick(&self, args: OnScheduledTickArgs<'_>) {
-        let state = args.world.get_block_state(args.position).await;
+    fn on_scheduled_tick(&self, args: OnScheduledTickArgs<'_>) {
+        let state = args.world.get_block_state(args.position);
         if args.block == &Block::REDSTONE_WALL_TORCH {
             let mut props = RWallTorchProps::from_state_id(state.id, args.block);
             let should_be_lit_now = should_be_lit(
                 args.world,
                 args.position,
                 props.facing.to_block_direction().opposite(),
-            )
-            .await;
+            );
             if props.lit != should_be_lit_now {
                 props.lit = should_be_lit_now;
-                args.world
-                    .set_block_state(
-                        args.position,
-                        props.to_state_id(args.block),
-                        BlockFlags::NOTIFY_ALL,
-                    )
-                    .await;
-                update_neighbors(args.world, args.position).await;
+                args.world.set_block_state(
+                    args.position,
+                    props.to_state_id(args.block),
+                    BlockFlags::NOTIFY_ALL,
+                );
+                update_neighbors(args.world, args.position);
             }
         } else if args.block == &Block::REDSTONE_TORCH {
             let mut props = RTorchProps::from_state_id(state.id, args.block);
-            let should_be_lit_now =
-                should_be_lit(args.world, args.position, BlockDirection::Down).await;
+            let should_be_lit_now = should_be_lit(args.world, args.position, BlockDirection::Down);
             if props.lit != should_be_lit_now {
                 props.lit = should_be_lit_now;
-                args.world
-                    .set_block_state(
-                        args.position,
-                        props.to_state_id(args.block),
-                        BlockFlags::NOTIFY_ALL,
-                    )
-                    .await;
-                update_neighbors(args.world, args.position).await;
+                args.world.set_block_state(
+                    args.position,
+                    props.to_state_id(args.block),
+                    BlockFlags::NOTIFY_ALL,
+                );
+                update_neighbors(args.world, args.position);
             }
         }
     }
 
-    async fn placed(&self, args: PlacedArgs<'_>) {
-        update_neighbors(args.world, args.position).await;
+    fn placed(&self, args: PlacedArgs<'_>) {
+        update_neighbors(args.world, args.position);
     }
 
-    async fn on_state_replaced(&self, args: OnStateReplacedArgs<'_>) {
-        update_neighbors(args.world, args.position).await;
+    fn on_state_replaced(&self, args: OnStateReplacedArgs<'_>) {
+        update_neighbors(args.world, args.position);
     }
 }
 
-pub async fn should_be_lit(world: &World, pos: &BlockPos, face: BlockDirection) -> bool {
+pub fn should_be_lit(world: &World, pos: &BlockPos, face: BlockDirection) -> bool {
     let other_pos = pos.offset(face.to_offset());
-    let (block, state) = world.get_block_and_state(&other_pos).await;
-    get_redstone_power(block, state, world, &other_pos, face).await == 0
+    let (block, state) = world.get_block_and_state(&other_pos);
+    get_redstone_power(block, state, world, &other_pos, face) == 0
 }
 
-pub async fn update_neighbors(world: &Arc<World>, pos: &BlockPos) {
+pub fn update_neighbors(world: &Arc<World>, pos: &BlockPos) {
     for dir in BlockDirection::all() {
         let other_pos = pos.offset(dir.to_offset());
-        world.update_neighbors(&other_pos, None).await;
+        world.update_neighbors(&other_pos, None);
     }
 }
 
-async fn can_place_at(
-    world: &dyn BlockAccessor,
-    block_pos: &BlockPos,
-    facing: BlockDirection,
-) -> bool {
+fn can_place_at(world: &dyn BlockAccessor, block_pos: &BlockPos, facing: BlockDirection) -> bool {
     world
         .get_block_state(&block_pos.offset(facing.to_offset()))
-        .await
         .is_side_solid(facing.opposite())
 }

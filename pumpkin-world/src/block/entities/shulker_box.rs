@@ -1,4 +1,4 @@
-use async_trait::async_trait;
+use parking_lot::Mutex;
 use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_util::math::position::BlockPos;
 use pumpkin_util::random::xoroshiro128::Xoroshiro;
@@ -8,7 +8,6 @@ use std::{
     array::from_fn,
     sync::{Arc, atomic::AtomicBool},
 };
-use tokio::sync::Mutex;
 
 use crate::block::viewer::{ViewerCountListener, ViewerCountTracker};
 use crate::world::SimpleWorld;
@@ -31,7 +30,6 @@ pub struct ShulkerBoxBlockEntity {
     pub viewers: ViewerCountTracker,
 }
 
-#[async_trait]
 impl BlockEntity for ShulkerBoxBlockEntity {
     fn resource_location(&self) -> &'static str {
         Self::ID
@@ -57,19 +55,18 @@ impl BlockEntity for ShulkerBoxBlockEntity {
         shulker_box
     }
 
-    async fn write_nbt(&self, nbt: &mut pumpkin_nbt::compound::NbtCompound) {
-        self.write_data(nbt, &self.items, true).await;
+    fn write_nbt(&self, nbt: &mut pumpkin_nbt::compound::NbtCompound) {
+        self.write_data(nbt, &self.items, true);
         // Safety precaution
-        //self.clear().await;
+        //self.clear();
     }
 
-    async fn tick(&self, world: Arc<dyn SimpleWorld>) {
+    fn tick(&self, world: Arc<dyn SimpleWorld>) {
         self.viewers
-            .update_viewer_count::<ShulkerBoxBlockEntity>(self, world, &self.position)
-            .await;
+            .update_viewer_count::<ShulkerBoxBlockEntity>(self, world, &self.position);
     }
 
-    async fn on_block_replaced(self: Arc<Self>, _world: Arc<dyn SimpleWorld>, _position: BlockPos) {
+    fn on_block_replaced(self: Arc<Self>, _world: Arc<dyn SimpleWorld>, _position: BlockPos) {
         // Do nothing
     }
 
@@ -86,30 +83,25 @@ impl BlockEntity for ShulkerBoxBlockEntity {
     }
 }
 
-#[async_trait]
 impl ViewerCountListener for ShulkerBoxBlockEntity {
-    async fn on_container_open(&self, world: &Arc<dyn SimpleWorld>, position: &BlockPos) {
-        self.play_sound(world, position, Sound::BlockShulkerBoxOpen)
-            .await;
+    fn on_container_open(&self, world: &Arc<dyn SimpleWorld>, position: &BlockPos) {
+        self.play_sound(world, position, Sound::BlockShulkerBoxOpen);
         // TODO: this.world.emitGameEvent(player, GameEvent.CONTAINER_OPEN, this.pos);
     }
 
-    async fn on_container_close(&self, world: &Arc<dyn SimpleWorld>, position: &BlockPos) {
-        self.play_sound(world, position, Sound::BlockShulkerBoxClose)
-            .await;
+    fn on_container_close(&self, world: &Arc<dyn SimpleWorld>, position: &BlockPos) {
+        self.play_sound(world, position, Sound::BlockShulkerBoxClose);
         // TODO: this.world.emitGameEvent(player, GameEvent.CONTAINER_CLOSE, this.pos);
     }
 
-    async fn on_viewer_count_update(
+    fn on_viewer_count_update(
         &self,
         world: &Arc<dyn SimpleWorld>,
         position: &BlockPos,
         _old: u16,
         new: u16,
     ) {
-        world
-            .add_synced_block_event(*position, Self::OPEN_ANIMATION_EVENT_TYPE, new as u8)
-            .await
+        world.add_synced_block_event(*position, Self::OPEN_ANIMATION_EVENT_TYPE, new as u8)
     }
 }
 
@@ -126,30 +118,27 @@ impl ShulkerBoxBlockEntity {
         }
     }
 
-    async fn play_sound(&self, world: &Arc<dyn SimpleWorld>, position: &BlockPos, sound: Sound) {
+    fn play_sound(&self, world: &Arc<dyn SimpleWorld>, position: &BlockPos, sound: Sound) {
         let mut rng = Xoroshiro::from_seed(get_seed());
 
-        world
-            .play_sound_fine(
-                sound,
-                SoundCategory::Blocks,
-                &position.to_centered_f64(),
-                0.5,
-                rng.next_f32() * 0.1 + 0.9,
-            )
-            .await;
+        world.play_sound_fine(
+            sound,
+            SoundCategory::Blocks,
+            &position.to_centered_f64(),
+            0.5,
+            rng.next_f32() * 0.1 + 0.9,
+        );
     }
 }
 
-#[async_trait]
 impl Inventory for ShulkerBoxBlockEntity {
     fn size(&self) -> usize {
         self.items.len()
     }
 
-    async fn is_empty(&self) -> bool {
+    fn is_empty(&self) -> bool {
         for slot in self.items.iter() {
-            if !slot.lock().await.is_empty() {
+            if !slot.lock().is_empty() {
                 return false;
             }
         }
@@ -157,23 +146,23 @@ impl Inventory for ShulkerBoxBlockEntity {
         true
     }
 
-    async fn get_stack(&self, slot: usize) -> Arc<Mutex<ItemStack>> {
+    fn get_stack(&self, slot: usize) -> Arc<Mutex<ItemStack>> {
         self.items[slot].clone()
     }
 
-    async fn remove_stack(&self, slot: usize) -> ItemStack {
+    fn remove_stack(&self, slot: usize) -> ItemStack {
         let mut removed = ItemStack::EMPTY.clone();
-        let mut guard = self.items[slot].lock().await;
+        let mut guard = self.items[slot].lock();
         std::mem::swap(&mut removed, &mut *guard);
         removed
     }
 
-    async fn remove_stack_specific(&self, slot: usize, amount: u8) -> ItemStack {
-        split_stack(&self.items, slot, amount).await
+    fn remove_stack_specific(&self, slot: usize, amount: u8) -> ItemStack {
+        split_stack(&self.items, slot, amount)
     }
 
-    async fn set_stack(&self, slot: usize, stack: ItemStack) {
-        *self.items[slot].lock().await = stack;
+    fn set_stack(&self, slot: usize, stack: ItemStack) {
+        *self.items[slot].lock() = stack;
     }
 
     fn on_open(&self) {
@@ -193,11 +182,10 @@ impl Inventory for ShulkerBoxBlockEntity {
     }
 }
 
-#[async_trait]
 impl Clearable for ShulkerBoxBlockEntity {
-    async fn clear(&self) {
+    fn clear(&self) {
         for slot in self.items.iter() {
-            *slot.lock().await = ItemStack::EMPTY.clone();
+            *slot.lock() = ItemStack::EMPTY.clone();
         }
     }
 }

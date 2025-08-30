@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use pumpkin_data::{
     Block,
     item::Item,
@@ -64,7 +63,7 @@ pub fn candle_from_cake(block: &Block) -> &'static Item {
 pub struct CandleCakeBlock;
 
 impl CandleCakeBlock {
-    async fn consume_and_drop_candle(
+    fn consume_and_drop_candle(
         block: &Block,
         player: &Player,
         location: &BlockPos,
@@ -84,26 +83,23 @@ impl CandleCakeBlock {
 
         let item_stack = ItemStack::new(1, candle_item);
 
-        world.drop_stack(location, item_stack).await;
+        world.drop_stack(location, item_stack);
 
-        world
-            .set_block_state(
-                location,
-                Block::CAKE.default_state.id,
-                BlockFlags::NOTIFY_ALL,
-            )
-            .await;
+        world.set_block_state(
+            location,
+            Block::CAKE.default_state.id,
+            BlockFlags::NOTIFY_ALL,
+        );
 
-        let (block, state) = world.get_block_and_state_id(location).await;
+        let (block, state) = world.get_block_and_state_id(location);
 
-        CakeBlock::consume_if_hungry(world, player, block, location, state).await
+        CakeBlock::consume_if_hungry(world, player, block, location, state)
     }
 }
 
-#[async_trait]
 impl BlockBehaviour for CandleCakeBlock {
-    async fn use_with_item(&self, args: UseWithItemArgs<'_>) -> BlockActionResult {
-        let item_id = args.item_stack.lock().await.item.id;
+    fn use_with_item(&self, args: UseWithItemArgs<'_>) -> BlockActionResult {
+        let item_id = args.item_stack.lock().item.id;
         match item_id {
             id if id == Item::FIRE_CHARGE.id || id == Item::FLINT_AND_STEEL.id => {
                 BlockActionResult::Pass
@@ -112,7 +108,7 @@ impl BlockBehaviour for CandleCakeBlock {
         }
     }
 
-    async fn normal_use(&self, args: NormalUseArgs<'_>) -> BlockActionResult {
-        Self::consume_and_drop_candle(args.block, args.player, args.position, args.world).await
+    fn normal_use(&self, args: NormalUseArgs<'_>) -> BlockActionResult {
+        Self::consume_and_drop_candle(args.block, args.player, args.position, args.world)
     }
 }

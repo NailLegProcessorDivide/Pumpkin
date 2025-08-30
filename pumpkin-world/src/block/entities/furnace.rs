@@ -6,7 +6,7 @@ use std::{
     },
 };
 
-use async_trait::async_trait;
+use parking_lot::Mutex;
 use pumpkin_data::{
     block_properties::{BlockProperties, FurnaceLikeProperties},
     fuels::get_item_burn_ticks,
@@ -15,7 +15,6 @@ use pumpkin_data::{
     recipes::{CookingRecipe, CookingRecipeType, RECIPES_COOKING},
 };
 use pumpkin_util::math::position::BlockPos;
-use tokio::sync::Mutex;
 
 use crate::{
     inventory::{Clearable, Inventory, split_stack},
@@ -64,21 +63,17 @@ impl FurnaceBlockEntity {
         None
     }
 
-    async fn can_accept_recipe_output(
-        &self,
-        recipe: Option<&CookingRecipe>,
-        max_count: u8,
-    ) -> bool {
+    fn can_accept_recipe_output(&self, recipe: Option<&CookingRecipe>, max_count: u8) -> bool {
         let recipe = match recipe {
             Some(cooking_recipe) => cooking_recipe,
             None => return false,
         };
 
-        let top_item_stack = self.items[0].lock().await;
+        let top_item_stack = self.items[0].lock();
         let is_top_items_empty = top_item_stack.is_empty();
         drop(top_item_stack);
 
-        let side_item_stack = self.items[2].lock().await;
+        let side_item_stack = self.items[2].lock();
         if side_item_stack.is_empty() {
             return !is_top_items_empty;
         }
@@ -95,13 +90,12 @@ impl FurnaceBlockEntity {
         false
     }
 
-    async fn craft_recipe(&self, recipe: Option<&CookingRecipe>) -> bool {
-        let can_accepet_output = self
-            .can_accept_recipe_output(recipe, self.get_max_count_per_stack())
-            .await;
+    fn craft_recipe(&self, recipe: Option<&CookingRecipe>) -> bool {
+        let can_accepet_output =
+            self.can_accept_recipe_output(recipe, self.get_max_count_per_stack());
         if let Some(recipe) = recipe {
             if can_accepet_output {
-                let mut side_items = self.items[2].lock().await;
+                let mut side_items = self.items[2].lock();
                 let output_item = match Item::from_registry_key(
                     recipe.result.id.strip_prefix("minecraft:").unwrap(),
                 ) {
@@ -112,21 +106,20 @@ impl FurnaceBlockEntity {
 
                 if side_items.are_equal(ItemStack::EMPTY) {
                     drop(side_items);
-                    self.set_stack(2, output_item_stack).await;
+                    self.set_stack(2, output_item_stack);
                 } else if side_items.are_items_and_components_equal(&output_item_stack) {
                     side_items.increment(1);
                 }
             }
 
-            let bottom_items = self.items[1].lock().await;
-            let mut top_items = self.items[0].lock().await;
+            let bottom_items = self.items[1].lock();
+            let mut top_items = self.items[0].lock();
             if top_items.item.id == Item::WET_SPONGE.id
                 && !bottom_items.is_empty()
                 && bottom_items.item.id == Item::BUCKET.id
             {
                 drop(bottom_items);
-                self.set_stack(1, ItemStack::new(1, &Item::WATER_BUCKET))
-                    .await;
+                self.set_stack(1, ItemStack::new(1, &Item::WATER_BUCKET));
             }
 
             top_items.decrement(1);
@@ -136,7 +129,7 @@ impl FurnaceBlockEntity {
         false
     }
 
-    pub async fn get_cook_progress(&self) -> f32 {
+    pub fn get_cook_progress(&self) -> f32 {
         let current = self.cooking_time_spent.load(Ordering::Relaxed) as i32;
         let total = self.cooking_total_time.load(Ordering::Relaxed) as i32;
 
@@ -147,7 +140,7 @@ impl FurnaceBlockEntity {
         }
     }
 
-    pub async fn get_fuel_progress(&self) -> f32 {
+    pub fn get_fuel_progress(&self) -> f32 {
         let remaining = self.lit_time_remaining.load(Ordering::Relaxed) as i32;
         let total = self.lit_total_time.load(Ordering::Relaxed) as i32;
         let adjusted_total = if total == 0 { 200 } else { total };
@@ -156,29 +149,27 @@ impl FurnaceBlockEntity {
     }
 }
 
-#[async_trait]
 impl BlockEntity for FurnaceBlockEntity {
-    async fn tick(&self, world: Arc<dyn SimpleWorld>) {
+    fn tick(&self, world: Arc<dyn SimpleWorld>) {
         let is_burning = self.is_burning();
         let mut is_dirty = false;
         if self.is_burning() {
             self.lit_time_remaining.fetch_sub(1, Ordering::Relaxed);
         }
 
-        let top_items = self.items[0].lock().await;
+        let top_items = self.items[0].lock();
         let is_top_items_empty = top_items.is_empty();
 
         let furnace_recipe = Self::get_furnace_cooking_recipe(top_items.item);
         drop(top_items);
 
-        let can_accepet_output = self
-            .can_accept_recipe_output(furnace_recipe, self.get_max_count_per_stack())
-            .await;
+        let can_accepet_output =
+            self.can_accept_recipe_output(furnace_recipe, self.get_max_count_per_stack());
 
-        let bottom_items_is_empty = self.items[1].lock().await.is_empty();
+        let bottom_items_is_empty = self.items[1].lock().is_empty();
         if self.is_burning() || !bottom_items_is_empty && !is_top_items_empty {
             if !self.is_burning() && can_accepet_output {
-                let mut bottom_items = self.items[1].lock().await;
+                let mut bottom_items = self.items[1].lock();
 
                 let fuel_ticks = get_item_burn_ticks(bottom_items.item.id).unwrap_or(0);
                 self.lit_time_remaining.store(fuel_ticks, Ordering::Relaxed);
@@ -193,7 +184,7 @@ impl BlockEntity for FurnaceBlockEntity {
                             && let Some(remainder_item) = Item::from_id(remainder_id)
                         {
                             drop(bottom_items);
-                            self.set_stack(1, ItemStack::new(1, remainder_item)).await;
+                            self.set_stack(1, ItemStack::new(1, remainder_item));
                         }
                     }
                 }
@@ -211,7 +202,7 @@ impl BlockEntity for FurnaceBlockEntity {
                         self.cooking_total_time
                             .store(cooking_total_time as u16, Ordering::Relaxed);
 
-                        self.craft_recipe(Some(cooking_recipe)).await;
+                        self.craft_recipe(Some(cooking_recipe));
                         is_dirty = true;
                     }
                 }
@@ -233,29 +224,24 @@ impl BlockEntity for FurnaceBlockEntity {
             is_dirty = true;
             let world = world.clone();
 
-            let (furnace_block, furnace_block_state) =
-                world.get_block_and_state(&self.position).await;
+            let (furnace_block, furnace_block_state) = world.get_block_and_state(&self.position);
             let mut props =
                 FurnaceLikeProperties::from_state_id(furnace_block_state.id, furnace_block);
 
             if self.is_burning() {
                 props.lit = true;
-                world
-                    .set_block_state(
-                        &self.position,
-                        props.to_state_id(furnace_block),
-                        BlockFlags::NOTIFY_ALL,
-                    )
-                    .await;
+                world.set_block_state(
+                    &self.position,
+                    props.to_state_id(furnace_block),
+                    BlockFlags::NOTIFY_ALL,
+                );
             } else {
                 props.lit = false;
-                world
-                    .set_block_state(
-                        &self.position,
-                        props.to_state_id(furnace_block),
-                        BlockFlags::NOTIFY_ALL,
-                    )
-                    .await;
+                world.set_block_state(
+                    &self.position,
+                    props.to_state_id(furnace_block),
+                    BlockFlags::NOTIFY_ALL,
+                );
             }
         }
 
@@ -307,7 +293,7 @@ impl BlockEntity for FurnaceBlockEntity {
         furnace
     }
 
-    async fn write_nbt(&self, nbt: &mut pumpkin_nbt::compound::NbtCompound) {
+    fn write_nbt(&self, nbt: &mut pumpkin_nbt::compound::NbtCompound) {
         nbt.put_short(
             "cooking_total_time",
             self.cooking_total_time.load(Ordering::Relaxed) as i16,
@@ -324,9 +310,9 @@ impl BlockEntity for FurnaceBlockEntity {
             "lit_time_remaining",
             self.lit_time_remaining.load(Ordering::Relaxed) as i16,
         );
-        self.write_data(nbt, &self.items, true).await;
+        self.write_data(nbt, &self.items, true);
         // Safety precaution
-        // self.clear().await;
+        // self.clear();
     }
 
     fn get_inventory(self: Arc<Self>) -> Option<Arc<dyn Inventory>> {
@@ -361,15 +347,14 @@ impl FurnaceBlockEntity {
     }
 }
 
-#[async_trait]
 impl Inventory for FurnaceBlockEntity {
     fn size(&self) -> usize {
         self.items.len()
     }
 
-    async fn is_empty(&self) -> bool {
+    fn is_empty(&self) -> bool {
         for slot in self.items.iter() {
-            if !slot.lock().await.is_empty() {
+            if !slot.lock().is_empty() {
                 return false;
             }
         }
@@ -377,24 +362,24 @@ impl Inventory for FurnaceBlockEntity {
         true
     }
 
-    async fn get_stack(&self, slot: usize) -> Arc<Mutex<ItemStack>> {
+    fn get_stack(&self, slot: usize) -> Arc<Mutex<ItemStack>> {
         self.items[slot].clone()
     }
 
-    async fn remove_stack(&self, slot: usize) -> ItemStack {
+    fn remove_stack(&self, slot: usize) -> ItemStack {
         let mut removed = ItemStack::EMPTY.clone();
-        let mut guard = self.items[slot].lock().await;
+        let mut guard = self.items[slot].lock();
         std::mem::swap(&mut removed, &mut *guard);
         removed
     }
 
-    async fn remove_stack_specific(&self, slot: usize, amount: u8) -> ItemStack {
-        split_stack(&self.items, slot, amount).await
+    fn remove_stack_specific(&self, slot: usize, amount: u8) -> ItemStack {
+        split_stack(&self.items, slot, amount)
     }
 
-    async fn set_stack(&self, slot: usize, stack: ItemStack) {
-        let furnace_stack = self.get_stack(slot).await;
-        let mut furnace_stack = furnace_stack.lock().await;
+    fn set_stack(&self, slot: usize, stack: ItemStack) {
+        let furnace_stack = self.get_stack(slot);
+        let mut furnace_stack = furnace_stack.lock();
 
         let is_same_item =
             !stack.is_empty() && ItemStack::are_items_and_components_equal(&furnace_stack, &stack);
@@ -423,11 +408,10 @@ impl Inventory for FurnaceBlockEntity {
     }
 }
 
-#[async_trait]
 impl Clearable for FurnaceBlockEntity {
-    async fn clear(&self) {
+    fn clear(&self) {
         for slot in self.items.iter() {
-            *slot.lock().await = ItemStack::EMPTY.clone();
+            *slot.lock() = ItemStack::EMPTY.clone();
         }
     }
 }

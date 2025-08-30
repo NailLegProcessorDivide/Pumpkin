@@ -1,6 +1,6 @@
 use std::sync::atomic::{AtomicU8, Ordering};
 
-use async_trait::async_trait;
+
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_util::math::position::BlockPos;
 
@@ -23,7 +23,6 @@ impl ComparatorBlockEntity {
 
 const OUTPUT_SIGNAL: &str = "OutputSignal";
 
-#[async_trait]
 impl BlockEntity for ComparatorBlockEntity {
     fn resource_location(&self) -> &'static str {
         Self::ID
@@ -44,7 +43,7 @@ impl BlockEntity for ComparatorBlockEntity {
         }
     }
 
-    async fn write_nbt(&self, nbt: &mut NbtCompound) {
+    fn write_nbt(&self, nbt: &mut NbtCompound) {
         nbt.put_int(
             OUTPUT_SIGNAL,
             self.output_signal.load(Ordering::Relaxed) as i32,

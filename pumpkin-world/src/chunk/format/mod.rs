@@ -1,8 +1,6 @@
 use std::{collections::HashMap, io::Cursor, path::PathBuf};
 
-use async_trait::async_trait;
 use bytes::Bytes;
-use futures::future::join_all;
 use pumpkin_data::{Block, chunk::ChunkStatus, fluid::Fluid};
 use pumpkin_nbt::{compound::NbtCompound, from_bytes, nbt_long_array};
 use uuid::Uuid;
@@ -37,7 +35,6 @@ pub struct ChunkStatusWrapper {
     status: ChunkStatus,
 }
 
-#[async_trait]
 impl SingleChunkDataSerializer for ChunkData {
     #[inline]
     fn from_bytes(bytes: Bytes, pos: Vector2<i32>) -> Result<Self, ChunkReadingError> {
@@ -45,8 +42,8 @@ impl SingleChunkDataSerializer for ChunkData {
     }
 
     #[inline]
-    async fn to_bytes(&self) -> Result<Bytes, ChunkSerializingError> {
-        self.internal_to_bytes().await
+    fn to_bytes(&self) -> Result<Bytes, ChunkSerializingError> {
+        self.internal_to_bytes()
     }
 
     #[inline]
@@ -201,7 +198,7 @@ impl ChunkData {
         })
     }
 
-    async fn internal_to_bytes(&self) -> Result<Bytes, ChunkSerializingError> {
+    fn internal_to_bytes(&self) -> Result<Bytes, ChunkSerializingError> {
         let sections: Vec<_> = (0..self.section.sections.len() + 2)
             .map(|i| {
                 let has_blocks = i >= 1 && i - 1 < self.section.sections.len();
@@ -239,12 +236,15 @@ impl ChunkData {
             sections,
             block_ticks: self.block_ticks.to_vec(),
             fluid_ticks: self.fluid_ticks.to_vec(),
-            block_entities: join_all(self.block_entities.values().map(|block_entity| async move {
-                let mut nbt = NbtCompound::new();
-                block_entity.write_internal(&mut nbt).await;
-                nbt
-            }))
-            .await,
+            block_entities: self
+                .block_entities
+                .values()
+                .map(|block_entity| {
+                    let mut nbt = NbtCompound::new();
+                    block_entity.write_internal(&mut nbt);
+                    nbt
+                })
+                .collect(),
             // we have not implemented light engine
             light_correct: false,
         };
@@ -275,7 +275,6 @@ impl Dirtiable for ChunkEntityData {
     }
 }
 
-#[async_trait]
 impl SingleChunkDataSerializer for ChunkEntityData {
     #[inline]
     fn from_bytes(bytes: Bytes, pos: Vector2<i32>) -> Result<Self, ChunkReadingError> {
@@ -283,7 +282,7 @@ impl SingleChunkDataSerializer for ChunkEntityData {
     }
 
     #[inline]
-    async fn to_bytes(&self) -> Result<Bytes, ChunkSerializingError> {
+    fn to_bytes(&self) -> Result<Bytes, ChunkSerializingError> {
         self.internal_to_bytes()
     }
 

@@ -9,7 +9,7 @@ pub struct NativePluginLoader;
 
 #[async_trait]
 impl PluginLoader for NativePluginLoader {
-    async fn load(
+    fn load(
         &self,
         path: &Path,
     ) -> Result<
@@ -22,7 +22,7 @@ impl PluginLoader for NativePluginLoader {
     > {
         let path = path.to_owned();
         let library = tokio::task::spawn_blocking(move || unsafe { Library::new(&path) })
-            .await
+
             .map_err(|e| LoaderError::RuntimeError(e.to_string()))?
             .map_err(|e| LoaderError::LibraryLoad(e.to_string()))?;
 
@@ -60,7 +60,7 @@ impl PluginLoader for NativePluginLoader {
         }
     }
 
-    async fn unload(&self, data: Box<dyn Any + Send + Sync>) -> Result<(), LoaderError> {
+    fn unload(&self, data: Box<dyn Any + Send + Sync>) -> Result<(), LoaderError> {
         match data.downcast::<Library>() {
             Ok(_) => Ok(()),
             Err(_) => Err(LoaderError::InvalidLoaderData),

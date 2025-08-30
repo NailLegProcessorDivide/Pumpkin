@@ -1,4 +1,4 @@
-use async_trait::async_trait;
+
 use pumpkin_data::Block;
 use pumpkin_data::block_properties::{
     BlockProperties, DoubleBlockHalf, TallSeagrassLikeProperties,
@@ -31,18 +31,18 @@ impl BlockMetadata for TallPlantBlock {
     }
 }
 
-#[async_trait]
+
 impl BlockBehaviour for TallPlantBlock {
-    async fn can_place_at(&self, args: CanPlaceAtArgs<'_>) -> bool {
+    fn can_place_at(&self, args: CanPlaceAtArgs<'_>) -> bool {
         let upper_state = args
             .block_accessor
             .get_block_state(&args.position.up())
-            .await;
-        <Self as PlantBlockBase>::can_place_at(self, args.block_accessor, args.position).await
+            ;
+        <Self as PlantBlockBase>::can_place_at(self, args.block_accessor, args.position)
             && upper_state.is_air()
     }
 
-    async fn get_state_for_neighbor_update(
+    fn get_state_for_neighbor_update(
         &self,
         args: GetStateForNeighborUpdateArgs<'_>,
     ) -> BlockStateId {
@@ -52,7 +52,7 @@ impl BlockBehaviour for TallPlantBlock {
             DoubleBlockHalf::Lower => args.position.up(),
         };
         let (other_block, other_state_id) =
-            args.world.get_block_and_state_id(&other_block_pos).await;
+            args.world.get_block_and_state_id(&other_block_pos);
         if self.ids().contains(&other_block.name) {
             let other_props =
                 TallSeagrassLikeProperties::from_state_id(other_state_id, other_block);

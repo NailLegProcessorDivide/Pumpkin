@@ -15,7 +15,7 @@ use crate::command::{CommandExecutor, CommandSender};
 use crate::server::Server;
 use crate::world::bossbar::Bossbar;
 use crate::world::custom_bossbar::BossbarUpdateError;
-use async_trait::async_trait;
+
 use pumpkin_util::text::TextComponent;
 use pumpkin_util::text::color::{Color, NamedColor};
 use pumpkin_util::text::hover::HoverEvent;
@@ -55,9 +55,9 @@ enum CommandValueSet {
 
 struct AddExecuter;
 
-#[async_trait]
+
 impl CommandExecutor for AddExecuter {
-    async fn execute<'a>(
+    fn execute<'a>(
         &self,
         sender: &mut CommandSender,
         server: &Server,
@@ -72,15 +72,14 @@ impl CommandExecutor for AddExecuter {
 
         let text_component = TextComponentArgConsumer::find_arg(args, ARG_NAME)?;
 
-        if server.bossbars.lock().await.has_bossbar(&namespace) {
+        if server.bossbars.lock().has_bossbar(&namespace) {
             send_error_message(
                 sender,
                 TextComponent::translate(
                     "commands.bossbar.create.failed",
                     [TextComponent::text(namespace.clone())],
                 ),
-            )
-            .await;
+            );
             return Ok(());
         }
 
@@ -88,15 +87,12 @@ impl CommandExecutor for AddExecuter {
         server
             .bossbars
             .lock()
-            .await
             .create_bossbar(namespace.clone(), bossbar.clone());
 
-        sender
-            .send_message(TextComponent::translate(
-                "commands.bossbar.create.success",
-                [bossbar_prefix(bossbar.title.clone(), namespace.clone())],
-            ))
-            .await;
+        sender.send_message(TextComponent::translate(
+            "commands.bossbar.create.success",
+            [bossbar_prefix(bossbar.title.clone(), namespace.clone())],
+        ));
 
         Ok(())
     }
@@ -104,9 +100,9 @@ impl CommandExecutor for AddExecuter {
 
 struct GetExecuter(CommandValueGet);
 
-#[async_trait]
+
 impl CommandExecutor for GetExecuter {
-    async fn execute<'a>(
+    fn execute<'a>(
         &self,
         sender: &mut CommandSender,
         server: &Server,
@@ -116,39 +112,34 @@ impl CommandExecutor for GetExecuter {
             .find_arg_default_name(args)?
             .to_string();
 
-        let Some(bossbar) = server.bossbars.lock().await.get_bossbar(&namespace) else {
+        let Some(bossbar) = server.bossbars.lock().get_bossbar(&namespace) else {
             handle_bossbar_error(
                 sender,
                 BossbarUpdateError::InvalidResourceLocation(namespace.clone()),
-            )
-            .await;
+            );
             return Ok(());
         };
 
         match self.0 {
             CommandValueGet::Max => {
-                sender
-                    .send_message(TextComponent::translate(
-                        "commands.bossbar.get.max",
-                        [
-                            bossbar_prefix(bossbar.bossbar_data.title.clone(), namespace.clone()),
-                            TextComponent::text(bossbar.max.to_string()),
-                        ],
-                    ))
-                    .await;
+                sender.send_message(TextComponent::translate(
+                    "commands.bossbar.get.max",
+                    [
+                        bossbar_prefix(bossbar.bossbar_data.title.clone(), namespace.clone()),
+                        TextComponent::text(bossbar.max.to_string()),
+                    ],
+                ));
                 return Ok(());
             }
             CommandValueGet::Players => {}
             CommandValueGet::Value => {
-                sender
-                    .send_message(TextComponent::translate(
-                        "commands.bossbar.get.value",
-                        [
-                            bossbar_prefix(bossbar.bossbar_data.title.clone(), namespace.clone()),
-                            TextComponent::text(bossbar.value.to_string()),
-                        ],
-                    ))
-                    .await;
+                sender.send_message(TextComponent::translate(
+                    "commands.bossbar.get.value",
+                    [
+                        bossbar_prefix(bossbar.bossbar_data.title.clone(), namespace.clone()),
+                        TextComponent::text(bossbar.value.to_string()),
+                    ],
+                ));
                 return Ok(());
             }
             CommandValueGet::Visible => {
@@ -157,15 +148,13 @@ impl CommandExecutor for GetExecuter {
                 } else {
                     "commands.bossbar.get.visible.hidden"
                 };
-                sender
-                    .send_message(TextComponent::translate(
-                        state,
-                        [bossbar_prefix(
-                            bossbar.bossbar_data.title.clone(),
-                            namespace.clone(),
-                        )],
-                    ))
-                    .await;
+                sender.send_message(TextComponent::translate(
+                    state,
+                    [bossbar_prefix(
+                        bossbar.bossbar_data.title.clone(),
+                        namespace.clone(),
+                    )],
+                ));
                 return Ok(());
             }
         }
@@ -176,31 +165,27 @@ impl CommandExecutor for GetExecuter {
 
 struct ListExecuter;
 
-#[async_trait]
+
 impl CommandExecutor for ListExecuter {
-    async fn execute<'a>(
+    fn execute<'a>(
         &self,
         sender: &mut CommandSender,
         server: &Server,
         _args: &ConsumedArgs<'a>,
     ) -> Result<(), CommandError> {
-        let bossbars = server.bossbars.lock().await.get_all_bossbars();
+        let bossbars = server.bossbars.lock().get_all_bossbars();
         let Some(bossbars) = bossbars else {
-            sender
-                .send_message(TextComponent::translate(
-                    "commands.bossbar.list.bars.none",
-                    [],
-                ))
-                .await;
+            sender.send_message(TextComponent::translate(
+                "commands.bossbar.list.bars.none",
+                [],
+            ));
             return Ok(());
         };
         if bossbars.is_empty() {
-            sender
-                .send_message(TextComponent::translate(
-                    "commands.bossbar.list.bars.none",
-                    [],
-                ))
-                .await;
+            sender.send_message(TextComponent::translate(
+                "commands.bossbar.list.bars.none",
+                [],
+            ));
             return Ok(());
         }
 
@@ -220,24 +205,22 @@ impl CommandExecutor for ListExecuter {
             }
         }
 
-        sender
-            .send_message(TextComponent::translate(
-                "commands.bossbar.list.bars.some",
-                [
-                    TextComponent::text(bossbars.len().to_string()),
-                    bossbars_text,
-                ],
-            ))
-            .await;
+        sender.send_message(TextComponent::translate(
+            "commands.bossbar.list.bars.some",
+            [
+                TextComponent::text(bossbars.len().to_string()),
+                bossbars_text,
+            ],
+        ));
         Ok(())
     }
 }
 
 struct RemoveExecuter;
 
-#[async_trait]
+
 impl CommandExecutor for RemoveExecuter {
-    async fn execute<'a>(
+    fn execute<'a>(
         &self,
         sender: &mut CommandSender,
         server: &Server,
@@ -247,35 +230,30 @@ impl CommandExecutor for RemoveExecuter {
             .find_arg_default_name(args)?
             .to_string();
 
-        let Some(bossbar) = server.bossbars.lock().await.get_bossbar(&namespace) else {
+        let Some(bossbar) = server.bossbars.lock().get_bossbar(&namespace) else {
             handle_bossbar_error(
                 sender,
                 BossbarUpdateError::InvalidResourceLocation(namespace),
-            )
-            .await;
+            );
             return Ok(());
         };
 
-        sender
-            .send_message(TextComponent::translate(
-                "commands.bossbar.remove.success",
-                [bossbar_prefix(
-                    bossbar.bossbar_data.title.clone(),
-                    namespace.clone(),
-                )],
-            ))
-            .await;
+        sender.send_message(TextComponent::translate(
+            "commands.bossbar.remove.success",
+            [bossbar_prefix(
+                bossbar.bossbar_data.title.clone(),
+                namespace.clone(),
+            )],
+        ));
 
         match server
             .bossbars
             .lock()
-            .await
             .remove_bossbar(server, namespace.clone())
-            .await
         {
             Ok(()) => {}
             Err(err) => {
-                handle_bossbar_error(sender, err).await;
+                handle_bossbar_error(sender, err);
                 return Ok(());
             }
         }
@@ -286,10 +264,10 @@ impl CommandExecutor for RemoveExecuter {
 
 struct SetExecuter(CommandValueSet);
 
-#[async_trait]
+
 impl CommandExecutor for SetExecuter {
     #[expect(clippy::too_many_lines)]
-    async fn execute<'a>(
+    fn execute<'a>(
         &self,
         sender: &mut CommandSender,
         server: &Server,
@@ -297,40 +275,35 @@ impl CommandExecutor for SetExecuter {
     ) -> Result<(), CommandError> {
         let namespace = autocomplete_consumer().find_arg_default_name(args)?;
 
-        let Some(bossbar) = server.bossbars.lock().await.get_bossbar(namespace) else {
+        let Some(bossbar) = server.bossbars.lock().get_bossbar(namespace) else {
             handle_bossbar_error(
                 sender,
                 BossbarUpdateError::InvalidResourceLocation(namespace.to_string()),
-            )
-            .await;
+            );
             return Ok(());
         };
 
         match self.0 {
             CommandValueSet::Color => {
                 let color = BossbarColorArgumentConsumer.find_arg_default_name(args)?;
-                match server
-                    .bossbars
-                    .lock()
-                    .await
-                    .update_color(server, namespace.to_string(), color.clone())
-                    .await
-                {
+                match server.bossbars.lock().update_color(
+                    server,
+                    namespace.to_string(),
+                    color.clone(),
+                ) {
                     Ok(()) => {}
                     Err(err) => {
-                        handle_bossbar_error(sender, err).await;
+                        handle_bossbar_error(sender, err);
                         return Ok(());
                     }
                 }
-                sender
-                    .send_message(TextComponent::translate(
-                        "commands.bossbar.set.color.success",
-                        [bossbar_prefix(
-                            bossbar.bossbar_data.title.clone(),
-                            namespace.to_string(),
-                        )],
-                    ))
-                    .await;
+                sender.send_message(TextComponent::translate(
+                    "commands.bossbar.set.color.success",
+                    [bossbar_prefix(
+                        bossbar.bossbar_data.title.clone(),
+                        namespace.to_string(),
+                    )],
+                ));
                 Ok(())
             }
             CommandValueSet::Max => {
@@ -341,42 +314,30 @@ impl CommandExecutor for SetExecuter {
                             "parsing.int.invalid",
                             [TextComponent::text(i32::MAX.to_string())],
                         ),
-                    )
-                    .await;
+                    );
                     return Ok(());
                 };
 
-                match server
-                    .bossbars
-                    .lock()
-                    .await
-                    .update_health(
-                        server,
-                        namespace.to_string(),
-                        max_value as u32,
-                        bossbar.value,
-                    )
-                    .await
-                {
+                match server.bossbars.lock().update_health(
+                    server,
+                    namespace.to_string(),
+                    max_value as u32,
+                    bossbar.value,
+                ) {
                     Ok(()) => {}
                     Err(err) => {
-                        handle_bossbar_error(sender, err).await;
+                        handle_bossbar_error(sender, err);
                         return Ok(());
                     }
                 }
 
-                sender
-                    .send_message(TextComponent::translate(
-                        "commands.bossbar.set.max.success",
-                        [
-                            bossbar_prefix(
-                                bossbar.bossbar_data.title.clone(),
-                                namespace.to_string(),
-                            ),
-                            TextComponent::text(max_value.to_string()),
-                        ],
-                    ))
-                    .await;
+                sender.send_message(TextComponent::translate(
+                    "commands.bossbar.set.max.success",
+                    [
+                        bossbar_prefix(bossbar.bossbar_data.title.clone(), namespace.to_string()),
+                        TextComponent::text(max_value.to_string()),
+                    ],
+                ));
                 Ok(())
             }
             CommandValueSet::Name => {
@@ -384,49 +345,41 @@ impl CommandExecutor for SetExecuter {
                 match server
                     .bossbars
                     .lock()
-                    .await
                     .update_name(server, namespace, text_component.clone())
-                    .await
                 {
                     Ok(()) => {}
                     Err(err) => {
-                        handle_bossbar_error(sender, err).await;
+                        handle_bossbar_error(sender, err);
                         return Ok(());
                     }
                 }
 
-                sender
-                    .send_message(TextComponent::translate(
-                        "commands.bossbar.set.name.success",
-                        [bossbar_prefix(text_component, namespace.to_string())],
-                    ))
-                    .await;
+                sender.send_message(TextComponent::translate(
+                    "commands.bossbar.set.name.success",
+                    [bossbar_prefix(text_component, namespace.to_string())],
+                ));
                 Ok(())
             }
             CommandValueSet::Players(has_players) => {
                 if !has_players {
-                    match server
-                        .bossbars
-                        .lock()
-                        .await
-                        .update_players(server, namespace.to_string(), vec![])
-                        .await
-                    {
+                    match server.bossbars.lock().update_players(
+                        server,
+                        namespace.to_string(),
+                        vec![],
+                    ) {
                         Ok(()) => {}
                         Err(err) => {
-                            handle_bossbar_error(sender, err).await;
+                            handle_bossbar_error(sender, err);
                             return Ok(());
                         }
                     }
-                    sender
-                        .send_message(TextComponent::translate(
-                            "commands.bossbar.set.players.success.none",
-                            [bossbar_prefix(
-                                bossbar.bossbar_data.title.clone(),
-                                namespace.to_string(),
-                            )],
-                        ))
-                        .await;
+                    sender.send_message(TextComponent::translate(
+                        "commands.bossbar.set.players.success.none",
+                        [bossbar_prefix(
+                            bossbar.bossbar_data.title.clone(),
+                            namespace.to_string(),
+                        )],
+                    ));
                     return Ok(());
                 }
 
@@ -439,13 +392,11 @@ impl CommandExecutor for SetExecuter {
                 match server
                     .bossbars
                     .lock()
-                    .await
                     .update_players(server, namespace.to_string(), players)
-                    .await
                 {
                     Ok(()) => {}
                     Err(err) => {
-                        handle_bossbar_error(sender, err).await;
+                        handle_bossbar_error(sender, err);
                         return Ok(());
                     }
                 }
@@ -455,45 +406,36 @@ impl CommandExecutor for SetExecuter {
                     .map(|player| player.gameprofile.name.clone())
                     .collect();
 
-                sender
-                    .send_message(TextComponent::translate(
-                        "commands.bossbar.set.players.success.some",
-                        [
-                            bossbar_prefix(
-                                bossbar.bossbar_data.title.clone(),
-                                namespace.to_string(),
-                            ),
-                            TextComponent::text(count.to_string()),
-                            TextComponent::text(player_names.join(", ").clone()),
-                        ],
-                    ))
-                    .await;
+                sender.send_message(TextComponent::translate(
+                    "commands.bossbar.set.players.success.some",
+                    [
+                        bossbar_prefix(bossbar.bossbar_data.title.clone(), namespace.to_string()),
+                        TextComponent::text(count.to_string()),
+                        TextComponent::text(player_names.join(", ").clone()),
+                    ],
+                ));
                 Ok(())
             }
             CommandValueSet::Style => {
                 let style = BossbarStyleArgumentConsumer.find_arg_default_name(args)?;
-                match server
-                    .bossbars
-                    .lock()
-                    .await
-                    .update_division(server, namespace.to_string(), style.clone())
-                    .await
-                {
+                match server.bossbars.lock().update_division(
+                    server,
+                    namespace.to_string(),
+                    style.clone(),
+                ) {
                     Ok(()) => {}
                     Err(err) => {
-                        handle_bossbar_error(sender, err).await;
+                        handle_bossbar_error(sender, err);
                         return Ok(());
                     }
                 }
-                sender
-                    .send_message(TextComponent::translate(
-                        "commands.bossbar.set.style.success",
-                        [bossbar_prefix(
-                            bossbar.bossbar_data.title.clone(),
-                            namespace.to_string(),
-                        )],
-                    ))
-                    .await;
+                sender.send_message(TextComponent::translate(
+                    "commands.bossbar.set.style.success",
+                    [bossbar_prefix(
+                        bossbar.bossbar_data.title.clone(),
+                        namespace.to_string(),
+                    )],
+                ));
                 Ok(())
             }
             CommandValueSet::Value => {
@@ -504,52 +446,43 @@ impl CommandExecutor for SetExecuter {
                             "parsing.int.invalid",
                             [TextComponent::text(i32::MAX.to_string())],
                         ),
-                    )
-                    .await;
+                    );
                     return Ok(());
                 };
 
-                match server
-                    .bossbars
-                    .lock()
-                    .await
-                    .update_health(server, namespace.to_string(), bossbar.max, value as u32)
-                    .await
-                {
+                match server.bossbars.lock().update_health(
+                    server,
+                    namespace.to_string(),
+                    bossbar.max,
+                    value as u32,
+                ) {
                     Ok(()) => {}
                     Err(err) => {
-                        handle_bossbar_error(sender, err).await;
+                        handle_bossbar_error(sender, err);
                         return Ok(());
                     }
                 }
 
-                sender
-                    .send_message(TextComponent::translate(
-                        "commands.bossbar.set.value.success",
-                        [
-                            bossbar_prefix(
-                                bossbar.bossbar_data.title.clone(),
-                                namespace.to_string(),
-                            ),
-                            TextComponent::text(value.to_string()),
-                        ],
-                    ))
-                    .await;
+                sender.send_message(TextComponent::translate(
+                    "commands.bossbar.set.value.success",
+                    [
+                        bossbar_prefix(bossbar.bossbar_data.title.clone(), namespace.to_string()),
+                        TextComponent::text(value.to_string()),
+                    ],
+                ));
                 Ok(())
             }
             CommandValueSet::Visible => {
                 let visibility = BoolArgConsumer::find_arg(args, ARG_VISIBLE)?;
 
-                match server
-                    .bossbars
-                    .lock()
-                    .await
-                    .update_visibility(server, namespace.to_string(), visibility)
-                    .await
-                {
+                match server.bossbars.lock().update_visibility(
+                    server,
+                    namespace.to_string(),
+                    visibility,
+                ) {
                     Ok(()) => {}
                     Err(err) => {
-                        handle_bossbar_error(sender, err).await;
+                        handle_bossbar_error(sender, err);
                         return Ok(());
                     }
                 }
@@ -560,15 +493,13 @@ impl CommandExecutor for SetExecuter {
                     "commands.bossbar.set.visible.success.hidden"
                 };
 
-                sender
-                    .send_message(TextComponent::translate(
-                        state,
-                        [bossbar_prefix(
-                            bossbar.bossbar_data.title.clone(),
-                            namespace.to_string(),
-                        )],
-                    ))
-                    .await;
+                sender.send_message(TextComponent::translate(
+                    state,
+                    [bossbar_prefix(
+                        bossbar.bossbar_data.title.clone(),
+                        namespace.to_string(),
+                    )],
+                ));
                 Ok(())
             }
         }
@@ -663,13 +594,11 @@ fn bossbar_prefix(title: TextComponent, namespace: String) -> TextComponent {
         .hover_event(HoverEvent::show_text(TextComponent::text(namespace)))
 }
 
-async fn send_error_message(sender: &CommandSender, message: TextComponent) {
-    sender
-        .send_message(message.color(Color::Named(NamedColor::Red)))
-        .await;
+fn send_error_message(sender: &CommandSender, message: TextComponent) {
+    sender.send_message(message.color(Color::Named(NamedColor::Red)));
 }
 
-async fn handle_bossbar_error(sender: &CommandSender, error: BossbarUpdateError<'_>) {
+fn handle_bossbar_error(sender: &CommandSender, error: BossbarUpdateError<'_>) {
     match error {
         BossbarUpdateError::InvalidResourceLocation(location) => {
             send_error_message(
@@ -678,8 +607,7 @@ async fn handle_bossbar_error(sender: &CommandSender, error: BossbarUpdateError<
                     "commands.bossbar.unknown",
                     [TextComponent::text(location)],
                 ),
-            )
-            .await;
+            );
         }
         BossbarUpdateError::NoChanges(value, variation) => {
             let mut key = "commands.bossbar.set.".to_string();
@@ -689,7 +617,7 @@ async fn handle_bossbar_error(sender: &CommandSender, error: BossbarUpdateError<
                 write!(key, ".{variation}").unwrap();
             }
 
-            send_error_message(sender, TextComponent::translate(key, [])).await;
+            send_error_message(sender, TextComponent::translate(key, []));
         }
     }
 }

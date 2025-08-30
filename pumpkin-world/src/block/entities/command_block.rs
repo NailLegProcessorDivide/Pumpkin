@@ -1,6 +1,6 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use async_trait::async_trait;
+
 use pumpkin_util::math::position::BlockPos;
 
 use super::BlockEntity;
@@ -26,7 +26,6 @@ impl CommandBlockEntity {
     }
 }
 
-#[async_trait]
 impl BlockEntity for CommandBlockEntity {
     fn resource_location(&self) -> &'static str {
         Self::ID
@@ -42,7 +41,7 @@ impl BlockEntity for CommandBlockEntity {
         Self::new(position)
     }
 
-    async fn write_nbt(&self, _nbt: &mut pumpkin_nbt::compound::NbtCompound) {}
+    fn write_nbt(&self, _nbt: &mut pumpkin_nbt::compound::NbtCompound) {}
 
     fn is_dirty(&self) -> bool {
         self.dirty.load(Ordering::Relaxed)

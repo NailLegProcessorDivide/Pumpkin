@@ -2,7 +2,6 @@ use std::{net::IpAddr, net::SocketAddr};
 
 use pumpkin_protocol::Property;
 use thiserror::Error;
-use tokio::sync::Mutex;
 
 use crate::net::{GameProfile, offline_uuid};
 
@@ -31,7 +30,7 @@ pub enum BungeeCordError {
 /// If any of the optional data is missing, the function will attempt to
 /// determine the player's information locally.
 pub async fn bungeecord_login(
-    client_address: &Mutex<SocketAddr>,
+    client_address: &SocketAddr,
     server_address: &str,
     name: String,
 ) -> Result<(IpAddr, GameProfile), BungeeCordError> {
@@ -42,7 +41,7 @@ pub async fn bungeecord_login(
         Some(ip) => ip
             .parse()
             .map_err(|_| BungeeCordError::FailedParseAddress)?,
-        None => client_address.lock().await.ip(),
+        None => client_address.ip(),
     };
 
     // The UUID of the player; only given if `ip_forward` on bungee is true.

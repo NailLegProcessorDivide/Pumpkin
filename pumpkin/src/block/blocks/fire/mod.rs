@@ -22,8 +22,8 @@ pub mod soul_fire;
 pub struct FireBlockBase;
 
 impl FireBlockBase {
-    pub async fn get_fire_type(world: &World, pos: &BlockPos) -> Block {
-        let block = world.get_block(&pos.down()).await;
+    pub fn get_fire_type(world: &World, pos: &BlockPos) -> Block {
+        let block = world.get_block(&pos.down());
         if SoulFireBlock::is_soul_base(block) {
             return Block::SOUL_FIRE;
         }
@@ -39,47 +39,42 @@ impl FireBlockBase {
             && block != &Block::LAVA
     }
 
-    pub async fn is_soul_fire(world: &Arc<World>, block_pos: &BlockPos) -> bool {
-        let block = world.get_block(&block_pos.down()).await;
+    pub fn is_soul_fire(world: &Arc<World>, block_pos: &BlockPos) -> bool {
+        let block = world.get_block(&block_pos.down());
         block.is_tagged_with_by_tag(&tag::Block::MINECRAFT_SOUL_FIRE_BASE_BLOCKS)
     }
 
-    pub async fn can_place_at(world: &Arc<World>, block_pos: &BlockPos) -> bool {
-        let block_state = world.get_block_state(block_pos).await;
+    pub fn can_place_at(world: &Arc<World>, block_pos: &BlockPos) -> bool {
+        let block_state = world.get_block_state(block_pos);
         if !block_state.is_air() {
             return false;
         }
-        if Self::is_soul_fire(world, block_pos).await {
-            SoulFireBlock
-                .can_place_at(CanPlaceAtArgs {
-                    server: None,
-                    world: Some(world),
-                    block_accessor: world.as_ref(),
-                    block: &Block::SOUL_FIRE,
-                    position: block_pos,
-                    direction: BlockDirection::Up,
-                    player: None,
-                    use_item_on: None,
-                })
-                .await
+        if Self::is_soul_fire(world, block_pos) {
+            SoulFireBlock.can_place_at(CanPlaceAtArgs {
+                server: None,
+                world: Some(world),
+                block_accessor: world.as_ref(),
+                block: &Block::SOUL_FIRE,
+                position: block_pos,
+                direction: BlockDirection::Up,
+                player: None,
+                use_item_on: None,
+            })
         } else {
-            FireBlock
-                .can_place_at(CanPlaceAtArgs {
-                    server: None,
-                    world: Some(world),
-                    block_accessor: world.as_ref(),
-                    block: &Block::FIRE,
-                    position: block_pos,
-                    direction: BlockDirection::Up,
-                    player: None,
-                    use_item_on: None,
-                })
-                .await
-                || Self::should_light_portal_at(world, block_pos, BlockDirection::Up).await
+            FireBlock.can_place_at(CanPlaceAtArgs {
+                server: None,
+                world: Some(world),
+                block_accessor: world.as_ref(),
+                block: &Block::FIRE,
+                position: block_pos,
+                direction: BlockDirection::Up,
+                player: None,
+                use_item_on: None,
+            }) || Self::should_light_portal_at(world, block_pos, BlockDirection::Up)
         }
     }
 
-    pub async fn should_light_portal_at(
+    pub fn should_light_portal_at(
         world: &Arc<World>,
         block_pos: &BlockPos,
         direction: BlockDirection,
@@ -93,7 +88,7 @@ impl FireBlockBase {
         let mut found = false;
 
         for dir in BlockDirection::all() {
-            if world.get_block(&block_pos.offset(dir.to_offset())).await == &Block::OBSIDIAN {
+            if world.get_block(&block_pos.offset(dir.to_offset())) == &Block::OBSIDIAN {
                 found = true;
                 break;
             }
@@ -111,13 +106,10 @@ impl FireBlockBase {
             ))
         };
         return NetherPortal::get_new_portal(world, block_pos, dir.to_horizontal_axis().unwrap())
-            .await
             .is_some();
     }
 
-    async fn broken(world: Arc<World>, block_pos: BlockPos) {
-        world
-            .sync_world_event(WorldEvent::FireExtinguished, block_pos, 0)
-            .await;
+    fn broken(world: Arc<World>, block_pos: BlockPos) {
+        world.sync_world_event(WorldEvent::FireExtinguished, block_pos, 0);
     }
 }

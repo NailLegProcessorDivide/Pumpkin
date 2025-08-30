@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use pumpkin_config::BASIC_CONFIG;
 use pumpkin_util::text::TextComponent;
 
@@ -17,26 +16,24 @@ const DESCRIPTION: &str = "Print the list of online players.";
 
 struct Executor;
 
-#[async_trait]
+
 impl CommandExecutor for Executor {
-    async fn execute<'a>(
+    fn execute<'a>(
         &self,
         sender: &mut CommandSender,
         server: &crate::server::Server,
         _args: &ConsumedArgs<'a>,
     ) -> Result<(), CommandError> {
-        let players: Vec<Arc<Player>> = server.get_all_players().await;
+        let players: Vec<Arc<Player>> = server.get_all_players();
 
-        sender
-            .send_message(TextComponent::translate(
-                "commands.list.players",
-                [
-                    TextComponent::text(players.len().to_string()),
-                    TextComponent::text(BASIC_CONFIG.max_players.to_string()),
-                    TextComponent::text(get_player_names(players)),
-                ],
-            ))
-            .await;
+        sender.send_message(TextComponent::translate(
+            "commands.list.players",
+            [
+                TextComponent::text(players.len().to_string()),
+                TextComponent::text(BASIC_CONFIG.max_players.to_string()),
+                TextComponent::text(get_player_names(players)),
+            ],
+        ));
 
         Ok(())
     }

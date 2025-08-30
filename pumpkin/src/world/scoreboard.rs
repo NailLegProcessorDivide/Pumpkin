@@ -24,7 +24,7 @@ impl Scoreboard {
         }
     }
 
-    pub async fn add_objective(&mut self, world: &World, objective: ScoreboardObjective<'_>) {
+    pub fn add_objective(&mut self, world: &World, objective: ScoreboardObjective<'_>) {
         if self.objectives.contains_key(objective.name) {
             // Maybe make this an error?
             log::warn!(
@@ -33,24 +33,20 @@ impl Scoreboard {
             );
             return;
         }
-        world
-            .broadcast_packet_all(&CUpdateObjectives::new(
-                objective.name.to_string(),
-                pumpkin_protocol::java::client::play::Mode::Add,
-                objective.display_name,
-                objective.render_type,
-                objective.number_format,
-            ))
-            .await;
-        world
-            .broadcast_packet_all(&CDisplayObjective::new(
-                ScoreboardDisplaySlot::Sidebar,
-                objective.name.to_string(),
-            ))
-            .await;
+        world.broadcast_packet_all(&CUpdateObjectives::new(
+            objective.name.to_string(),
+            pumpkin_protocol::java::client::play::Mode::Add,
+            objective.display_name,
+            objective.render_type,
+            objective.number_format,
+        ));
+        world.broadcast_packet_all(&CDisplayObjective::new(
+            ScoreboardDisplaySlot::Sidebar,
+            objective.name.to_string(),
+        ));
     }
 
-    pub async fn update_score(&self, world: &World, score: ScoreboardScore<'_>) {
+    pub fn update_score(&self, world: &World, score: ScoreboardScore<'_>) {
         if self.objectives.contains_key(score.objective_name) {
             log::warn!(
                 "Tried to place a score into an objective which does not exist: {}",
@@ -58,15 +54,13 @@ impl Scoreboard {
             );
             return;
         }
-        world
-            .broadcast_packet_all(&CUpdateScore::new(
-                score.entity_name.to_string(),
-                score.objective_name.to_string(),
-                score.value,
-                score.display_name,
-                score.number_format,
-            ))
-            .await;
+        world.broadcast_packet_all(&CUpdateScore::new(
+            score.entity_name.to_string(),
+            score.objective_name.to_string(),
+            score.value,
+            score.display_name,
+            score.number_format,
+        ));
     }
 
     // pub fn add_team(&mut self, name: String) {

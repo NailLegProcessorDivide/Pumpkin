@@ -6,7 +6,7 @@ use crate::command::dispatcher::CommandError;
 use crate::command::tree::RawArgs;
 use crate::entity::EntityBase;
 use crate::server::Server;
-use async_trait::async_trait;
+
 use pumpkin_protocol::java::client::play::{ArgumentType, CommandSuggestion, SuggestionProviders};
 
 use super::super::args::ArgumentConsumer;
@@ -32,9 +32,9 @@ impl GetClientSideArgParser for EntityArgumentConsumer {
     }
 }
 
-#[async_trait]
+
 impl ArgumentConsumer for EntityArgumentConsumer {
-    async fn consume<'a>(
+    fn consume<'a>(
         &'a self,
         src: &CommandSender,
         server: &'a Server,
@@ -54,13 +54,13 @@ impl ArgumentConsumer for EntityArgumentConsumer {
             return None;
         }
         // todo: command context
-        let entities = server.select_entities(&entity_selector, Some(src)).await;
+        let entities = server.select_entities(&entity_selector, Some(src));
 
         // Take first
         entities.into_iter().next().map(Arg::Entity)
     }
 
-    async fn suggest<'a>(
+    fn suggest<'a>(
         &'a self,
         _sender: &CommandSender,
         _server: &'a Server,

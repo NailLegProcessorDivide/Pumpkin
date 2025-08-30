@@ -5,8 +5,8 @@ use time::OffsetDateTime;
 
 use super::{LoadJSONConfiguration, SaveJSONConfiguration, banlist_serializer::BannedIpEntry};
 
-pub static BANNED_IP_LIST: LazyLock<tokio::sync::RwLock<BannedIpList>> =
-    LazyLock::new(|| tokio::sync::RwLock::new(BannedIpList::load()));
+pub static BANNED_IP_LIST: LazyLock<parking_lot::RwLock<BannedIpList>> =
+    LazyLock::new(|| parking_lot::RwLock::new(BannedIpList::load()));
 
 #[derive(Deserialize, Serialize, Default)]
 #[serde(transparent)]

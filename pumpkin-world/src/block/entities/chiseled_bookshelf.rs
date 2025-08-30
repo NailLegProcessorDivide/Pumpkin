@@ -1,5 +1,5 @@
-use async_trait::async_trait;
 use log::warn;
+use parking_lot::Mutex;
 use pumpkin_data::Block;
 use pumpkin_data::block_properties::{BlockProperties, ChiseledBookshelfLikeProperties};
 use pumpkin_nbt::compound::NbtCompound;
@@ -12,7 +12,6 @@ use std::{
         atomic::{AtomicBool, AtomicI8, Ordering},
     },
 };
-use tokio::sync::Mutex;
 
 use crate::{
     block::entities::BlockEntity,
@@ -31,7 +30,6 @@ pub struct ChiseledBookshelfBlockEntity {
 
 const LAST_INTERACTED_SLOT: &str = "last_interacted_slot";
 
-#[async_trait]
 impl BlockEntity for ChiseledBookshelfBlockEntity {
     fn resource_location(&self) -> &'static str {
         Self::ID
@@ -59,8 +57,8 @@ impl BlockEntity for ChiseledBookshelfBlockEntity {
         chiseled_bookshelf
     }
 
-    async fn write_nbt(&self, nbt: &mut NbtCompound) {
-        self.write_data(nbt, &self.items, true).await;
+    fn write_nbt(&self, nbt: &mut NbtCompound) {
+        self.write_data(nbt, &self.items, true);
         nbt.put_int(
             LAST_INTERACTED_SLOT,
             self.last_interacted_slot.load(Ordering::Relaxed).into(),
@@ -92,7 +90,7 @@ impl ChiseledBookshelfBlockEntity {
         }
     }
 
-    pub async fn update_state(
+    pub fn update_state(
         &self,
         mut properties: ChiseledBookshelfLikeProperties,
         world: Arc<dyn SimpleWorld>,
@@ -101,20 +99,18 @@ impl ChiseledBookshelfBlockEntity {
         if slot >= 0 && slot < self.items.len() as i8 {
             self.last_interacted_slot.store(slot, Ordering::Relaxed);
 
-            properties.slot_0_occupied = !self.items[0].lock().await.is_empty();
-            properties.slot_1_occupied = !self.items[1].lock().await.is_empty();
-            properties.slot_2_occupied = !self.items[2].lock().await.is_empty();
-            properties.slot_3_occupied = !self.items[3].lock().await.is_empty();
-            properties.slot_4_occupied = !self.items[4].lock().await.is_empty();
-            properties.slot_5_occupied = !self.items[5].lock().await.is_empty();
+            properties.slot_0_occupied = !self.items[0].lock().is_empty();
+            properties.slot_1_occupied = !self.items[1].lock().is_empty();
+            properties.slot_2_occupied = !self.items[2].lock().is_empty();
+            properties.slot_3_occupied = !self.items[3].lock().is_empty();
+            properties.slot_4_occupied = !self.items[4].lock().is_empty();
+            properties.slot_5_occupied = !self.items[5].lock().is_empty();
 
-            world
-                .set_block_state(
-                    &self.position,
-                    properties.to_state_id(&Block::CHISELED_BOOKSHELF),
-                    BlockFlags::NOTIFY_ALL,
-                )
-                .await;
+            world.set_block_state(
+                &self.position,
+                properties.to_state_id(&Block::CHISELED_BOOKSHELF),
+                BlockFlags::NOTIFY_ALL,
+            );
         } else {
             warn!(
                 "Invalid interacted slot: {} for chiseled bookshelf at position {:?}",
@@ -124,15 +120,14 @@ impl ChiseledBookshelfBlockEntity {
     }
 }
 
-#[async_trait]
 impl Inventory for ChiseledBookshelfBlockEntity {
     fn size(&self) -> usize {
         self.items.len()
     }
 
-    async fn is_empty(&self) -> bool {
+    fn is_empty(&self) -> bool {
         for slot in self.items.iter() {
-            if !slot.lock().await.is_empty() {
+            if !slot.lock().is_empty() {
                 return false;
             }
         }
@@ -140,23 +135,23 @@ impl Inventory for ChiseledBookshelfBlockEntity {
         true
     }
 
-    async fn get_stack(&self, slot: usize) -> Arc<Mutex<ItemStack>> {
+    fn get_stack(&self, slot: usize) -> Arc<Mutex<ItemStack>> {
         self.items[slot].clone()
     }
 
-    async fn remove_stack(&self, slot: usize) -> ItemStack {
+    fn remove_stack(&self, slot: usize) -> ItemStack {
         let mut removed = ItemStack::EMPTY.clone();
-        let mut guard = self.items[slot].lock().await;
+        let mut guard = self.items[slot].lock();
         std::mem::swap(&mut removed, &mut *guard);
         removed
     }
 
-    async fn remove_stack_specific(&self, slot: usize, amount: u8) -> ItemStack {
-        split_stack(&self.items, slot, amount).await
+    fn remove_stack_specific(&self, slot: usize, amount: u8) -> ItemStack {
+        split_stack(&self.items, slot, amount)
     }
 
-    async fn set_stack(&self, slot: usize, stack: ItemStack) {
-        *self.items[slot].lock().await = stack;
+    fn set_stack(&self, slot: usize, stack: ItemStack) {
+        *self.items[slot].lock() = stack;
     }
 
     fn mark_dirty(&self) {
@@ -168,11 +163,10 @@ impl Inventory for ChiseledBookshelfBlockEntity {
     }
 }
 
-#[async_trait]
 impl Clearable for ChiseledBookshelfBlockEntity {
-    async fn clear(&self) {
+    fn clear(&self) {
         for slot in self.items.iter() {
-            *slot.lock().await = ItemStack::EMPTY.clone();
+            *slot.lock() = ItemStack::EMPTY.clone();
         }
     }
 }

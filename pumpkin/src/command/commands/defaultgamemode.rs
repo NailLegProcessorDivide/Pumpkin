@@ -5,7 +5,7 @@ use crate::command::tree::builder::argument;
 use crate::command::{
     CommandError, CommandExecutor, CommandSender, args::ConsumedArgs, tree::CommandTree,
 };
-use async_trait::async_trait;
+
 use pumpkin_config::BASIC_CONFIG;
 use pumpkin_util::GameMode;
 use pumpkin_util::text::TextComponent;
@@ -22,9 +22,9 @@ pub struct DefaultGamemode {
 
 struct DefaultGamemodeExecutor;
 
-#[async_trait]
+
 impl CommandExecutor for DefaultGamemodeExecutor {
-    async fn execute<'a>(
+    fn execute<'a>(
         &self,
         sender: &mut CommandSender,
         server: &crate::server::Server,
@@ -35,23 +35,21 @@ impl CommandExecutor for DefaultGamemodeExecutor {
         };
 
         if BASIC_CONFIG.force_gamemode {
-            for player in server.get_all_players().await {
-                player.set_gamemode(gamemode).await;
+            for player in server.get_all_players() {
+                player.set_gamemode(gamemode);
             }
         }
 
         let gamemode_string = format!("{gamemode:?}").to_lowercase();
         let gamemode_string = format!("gameMode.{gamemode_string}");
 
-        sender
-            .send_message(TextComponent::translate(
-                "commands.defaultgamemode.success",
-                [TextComponent::translate(gamemode_string, [])],
-            ))
-            .await;
+        sender.send_message(TextComponent::translate(
+            "commands.defaultgamemode.success",
+            [TextComponent::translate(gamemode_string, [])],
+        ));
 
         //Change the default gamemode (not in configuration.toml)
-        server.defaultgamemode.lock().await.gamemode = gamemode;
+        server.defaultgamemode.lock().gamemode = gamemode;
 
         Ok(())
     }

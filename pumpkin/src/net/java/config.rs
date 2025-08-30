@@ -3,7 +3,6 @@ use std::{num::NonZeroU8, sync::Arc};
 use crate::{
     entity::player::ChatMode,
     net::{ClientPlatform, PlayerConfig, can_not_join, java::JavaClient},
-    server::Server,
 };
 use core::str;
 use pumpkin_config::{BASIC_CONFIG, advanced_config};
@@ -144,7 +143,7 @@ impl JavaClient {
         );
     }
 
-    pub async fn handle_known_packs(&self, server: &Server, _config_acknowledged: SKnownPacks) {
+    pub async fn handle_known_packs(&self, _config_acknowledged: SKnownPacks) {
         log::debug!("Handling known packs");
         for registry in &server.cached_registry {
             self.send_packet_now(&CRegistryData::new(
@@ -159,9 +158,9 @@ impl JavaClient {
         self.send_packet_now(&CFinishConfig).await;
     }
 
-    pub async fn handle_config_acknowledged(self: &Arc<Self>, server: &Server) {
+    pub async fn handle_config_acknowledged(&mut self) {
         log::debug!("Handling config acknowledgement");
-        self.connection_state.store(ConnectionState::Play);
+        self.connection_state = ConnectionState::Play;
 
         let profile = self.gameprofile.lock().await.clone();
         let profile = profile.unwrap();

@@ -100,8 +100,7 @@ pub fn send_cancellable(input: TokenStream) -> TokenStream {
             if let Some(cancelled_block) = cancelled_block {
                 quote! {
                     let event = crate::PLUGIN_MANAGER
-                        .fire(#event)
-                        .await;
+                        .fire(#event);
 
                     if !event.cancelled {
                         #after_block
@@ -113,8 +112,7 @@ pub fn send_cancellable(input: TokenStream) -> TokenStream {
             } else {
                 quote! {
                     let event = crate::PLUGIN_MANAGER
-                        .fire(#event)
-                        .await;
+                        .fire(#event);
 
                     if !event.cancelled {
                         #after_block
@@ -125,8 +123,7 @@ pub fn send_cancellable(input: TokenStream) -> TokenStream {
         } else if let Some(cancelled_block) = cancelled_block {
             quote! {
                 let event = crate::PLUGIN_MANAGER
-                    .fire(#event)
-                    .await;
+                    .fire(#event);
 
                 if event.cancelled {
                     #cancelled_block
@@ -136,8 +133,7 @@ pub fn send_cancellable(input: TokenStream) -> TokenStream {
         } else {
             quote! {
                 let event = crate::PLUGIN_MANAGER
-                    .fire(#event)
-                    .await;
+                    .fire(#event);
             }
             .into()
         }

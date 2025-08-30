@@ -1,4 +1,4 @@
-use async_trait::async_trait;
+
 use pumpkin_data::Enchantment;
 use pumpkin_protocol::java::client::play::{ArgumentType, CommandSuggestion, SuggestionProviders};
 
@@ -27,9 +27,9 @@ impl GetClientSideArgParser for EnchantmentArgumentConsumer {
     }
 }
 
-#[async_trait]
+
 impl ArgumentConsumer for EnchantmentArgumentConsumer {
-    async fn consume<'a>(
+    fn consume<'a>(
         &'a self,
         _sender: &CommandSender,
         _server: &'a Server,
@@ -43,7 +43,7 @@ impl ArgumentConsumer for EnchantmentArgumentConsumer {
         Some(Arg::Enchantment(enchantment))
     }
 
-    async fn suggest<'a>(
+    fn suggest<'a>(
         &'a self,
         _sender: &CommandSender,
         _server: &'a Server,

@@ -1,4 +1,4 @@
-use async_trait::async_trait;
+
 use pumpkin_protocol::java::client::play::{
     ArgumentType, CommandSuggestion, StringProtoArgBehavior, SuggestionProviders,
 };
@@ -27,9 +27,9 @@ impl GetClientSideArgParser for CommandTreeArgumentConsumer {
     }
 }
 
-#[async_trait]
+
 impl ArgumentConsumer for CommandTreeArgumentConsumer {
-    async fn consume<'a>(
+    fn consume<'a>(
         &'a self,
         _sender: &CommandSender,
         server: &'a Server,
@@ -37,13 +37,13 @@ impl ArgumentConsumer for CommandTreeArgumentConsumer {
     ) -> Option<Arg<'a>> {
         let s = args.pop()?;
 
-        let dispatcher = server.command_dispatcher.read().await;
+        let dispatcher = server.command_dispatcher.read();
         dispatcher
             .get_tree(s)
             .map_or_else(|_| None, |tree| Some(Arg::CommandTree(tree.clone())))
     }
 
-    async fn suggest<'a>(
+    fn suggest<'a>(
         &'a self,
         _sender: &CommandSender,
         server: &'a Server,
@@ -53,7 +53,7 @@ impl ArgumentConsumer for CommandTreeArgumentConsumer {
             return Ok(None);
         };
 
-        let dispatcher = server.command_dispatcher.read().await;
+        let dispatcher = server.command_dispatcher.read();
         let suggestions = dispatcher
             .commands
             .keys()

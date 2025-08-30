@@ -95,26 +95,26 @@ impl ServerTickRateManager {
         self.update_state_to_clients(server).await;
     }
 
-    pub async fn step_game_if_paused(&self, server: &Server, ticks: i32) -> bool {
+    pub fn step_game_if_paused(&self, server: &Server, ticks: i32) -> bool {
         if !self.is_frozen() {
             return false;
         }
         self.frozen_ticks_to_run.store(ticks, Ordering::Relaxed);
-        self.update_step_ticks(server).await;
+        self.update_step_ticks(server);
         true
     }
 
-    pub async fn stop_stepping(&self, server: &Server) -> bool {
+    pub fn stop_stepping(&self, server: &Server) -> bool {
         if self.is_stepping_forward() {
             self.frozen_ticks_to_run.store(0, Ordering::Relaxed);
-            self.update_step_ticks(server).await;
+            self.update_step_ticks(server);
             true
         } else {
             false
         }
     }
 
-    pub async fn request_game_to_sprint(&self, server: &Server, ticks: i64) -> bool {
+    pub fn request_game_to_sprint(&self, server: &Server, ticks: i64) -> bool {
         let was_sprinting = self.is_sprinting();
         self.sprint_time_spend.store(0, Ordering::Relaxed);
         self.scheduled_current_sprint_ticks
@@ -122,13 +122,13 @@ impl ServerTickRateManager {
         self.remaining_sprint_ticks.store(ticks, Ordering::Relaxed);
         self.previous_is_frozen
             .store(self.is_frozen(), Ordering::Relaxed);
-        self.set_frozen(server, false).await;
+        self.set_frozen(server, false);
         was_sprinting
     }
 
-    pub async fn stop_sprinting(&self, server: &Server) -> bool {
+    pub fn stop_sprinting(&self, server: &Server) -> bool {
         if self.is_sprinting() {
-            self.finish_tick_sprint(server).await;
+            self.finish_tick_sprint(server);
             true
         } else {
             false
@@ -151,7 +151,7 @@ impl ServerTickRateManager {
         self.remaining_sprint_ticks.fetch_sub(1, Ordering::Relaxed) == 1
     }
 
-    pub async fn finish_tick_sprint(&self, server: &Server) {
+    pub fn finish_tick_sprint(&self, server: &Server) {
         let total_sprinted_ticks = self.scheduled_current_sprint_ticks.load(Ordering::Relaxed)
             - self.remaining_sprint_ticks.load(Ordering::Relaxed);
         let time_spent_nanos = self.sprint_time_spend.load(Ordering::Relaxed);
@@ -181,17 +181,14 @@ impl ServerTickRateManager {
             .color_named(NamedColor::Gray);
 
         // Send as a system chat message, which does not add a sender prefix.
-        server
-            .broadcast_packet_all(&CSystemChatMessage::new(&final_report, false))
-            .await;
+        server.broadcast_packet_all(&CSystemChatMessage::new(&final_report, false));
 
         // Reset state after sending the report
         self.scheduled_current_sprint_ticks
             .store(0, Ordering::Relaxed);
         self.sprint_time_spend.store(0, Ordering::Relaxed);
         self.remaining_sprint_ticks.store(0, Ordering::Relaxed);
-        self.set_frozen(server, self.previous_is_frozen.load(Ordering::Relaxed))
-            .await;
+        self.set_frozen(server, self.previous_is_frozen.load(Ordering::Relaxed));
         // server.on_tick_rate_changed();
     }
 

@@ -27,8 +27,8 @@ pub mod torch_flower;
 pub mod wheat;
 
 trait CropBlockBase: PlantBlockBase {
-    async fn can_plant_on_top(&self, block_accessor: &dyn BlockAccessor, pos: &BlockPos) -> bool {
-        let block = block_accessor.get_block(pos).await;
+    fn can_plant_on_top(&self, block_accessor: &dyn BlockAccessor, pos: &BlockPos) -> bool {
+        let block = block_accessor.get_block(pos);
         block == &Block::FARMLAND
     }
 
@@ -47,11 +47,11 @@ trait CropBlockBase: PlantBlockBase {
         props.to_state_id(block)
     }
 
-    async fn random_tick(&self, world: &Arc<World>, pos: &BlockPos) {
-        let (block, state) = world.get_block_and_state_id(pos).await;
+    fn random_tick(&self, world: &Arc<World>, pos: &BlockPos) {
+        let (block, state) = world.get_block_and_state_id(pos);
         let age = self.get_age(state, block);
         if age < self.max_age() {
-            let f = get_available_moisture(world, pos, block).await;
+            let f = get_available_moisture(world, pos, block);
             if rand::rng().random_range(0..=(25.0 / f).floor() as i64) == 0 {
                 world
                     .set_block_state(
@@ -59,7 +59,7 @@ trait CropBlockBase: PlantBlockBase {
                         self.state_with_age(block, state, age + 1),
                         BlockFlags::NOTIFY_NEIGHBORS,
                     )
-                    .await;
+                    ;
             }
         }
     }
@@ -67,7 +67,7 @@ trait CropBlockBase: PlantBlockBase {
     //TODO add impl for light level
 }
 
-pub async fn get_available_moisture(world: &Arc<World>, pos: &BlockPos, block: &Block) -> f32 {
+pub fn get_available_moisture(world: &Arc<World>, pos: &BlockPos, block: &Block) -> f32 {
     let mut moisture = 1.0;
     let down_pos = pos.down();
 
@@ -77,7 +77,7 @@ pub async fn get_available_moisture(world: &Arc<World>, pos: &BlockPos, block: &
 
             let (block, block_state) = world
                 .get_block_and_state_id(&down_pos.offset(Vector3 { x: dx, y: 0, z: dz }))
-                .await;
+                ;
             if block == &Block::FARMLAND {
                 local_moisture = 1.0;
                 let props = FarmlandProperties::from_state_id(block_state, block);
@@ -98,13 +98,13 @@ pub async fn get_available_moisture(world: &Arc<World>, pos: &BlockPos, block: &
     let south = pos.offset(South.to_offset());
     let west = pos.offset(West.to_offset());
     let east = pos.offset(East.to_offset());
-    let horizontal = world.get_block(&west).await == block || world.get_block(&east).await == block;
-    let vertical = world.get_block(&north).await == block || world.get_block(&south).await == block;
+    let horizontal = world.get_block(&west) == block || world.get_block(&east) == block;
+    let vertical = world.get_block(&north) == block || world.get_block(&south) == block;
     if (horizontal && vertical)
-        || world.get_block(&west.offset(North.to_offset())).await == block
-        || world.get_block(&east.offset(North.to_offset())).await == block
-        || world.get_block(&east.offset(South.to_offset())).await == block
-        || world.get_block(&west.offset(South.to_offset())).await == block
+        || world.get_block(&west.offset(North.to_offset())) == block
+        || world.get_block(&east.offset(North.to_offset())) == block
+        || world.get_block(&east.offset(South.to_offset())) == block
+        || world.get_block(&west.offset(South.to_offset())) == block
     {
         moisture /= 2.0;
     }

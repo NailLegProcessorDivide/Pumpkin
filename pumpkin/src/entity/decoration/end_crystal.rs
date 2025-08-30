@@ -2,7 +2,7 @@ use core::f32;
 use std::sync::Arc;
 
 use crate::entity::{Entity, EntityBase, NBTStorage, living::LivingEntity};
-use async_trait::async_trait;
+
 use pumpkin_data::damage::DamageType;
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_protocol::java::client::play::{MetaDataType, Metadata};
@@ -19,21 +19,20 @@ impl EndCrystalEntity {
 }
 
 impl EndCrystalEntity {
-    pub async fn set_show_bottom(&self, show_bottom: bool) {
+    pub fn set_show_bottom(&self, show_bottom: bool) {
         self.entity
-            .send_meta_data(&[Metadata::new(9, MetaDataType::Boolean, show_bottom)])
-            .await;
+            .send_meta_data(&[Metadata::new(9, MetaDataType::Boolean, show_bottom)]);
     }
 }
 
-#[async_trait]
-impl NBTStorage for EndCrystalEntity {
-    async fn write_nbt(&self, _nbt: &mut NbtCompound) {}
 
-    async fn read_nbt_non_mut(&self, _nbt: &NbtCompound) {}
+impl NBTStorage for EndCrystalEntity {
+    fn write_nbt(&self, _nbt: &mut NbtCompound) {}
+
+    fn read_nbt_non_mut(&self, _nbt: &NbtCompound) {}
 }
 
-#[async_trait]
+
 impl EntityBase for EndCrystalEntity {
     fn get_entity(&self) -> &Entity {
         &self.entity
@@ -43,7 +42,7 @@ impl EntityBase for EndCrystalEntity {
         None
     }
 
-    async fn damage_with_context(
+    fn damage_with_context(
         &self,
         _caller: Arc<dyn EntityBase>,
         _amount: f32,
@@ -53,11 +52,11 @@ impl EntityBase for EndCrystalEntity {
         _cause: Option<&dyn EntityBase>,
     ) -> bool {
         if damage_type != DamageType::EXPLOSION {
-            self.entity.world.explode(self.entity.pos.load(), 6.0).await;
+            self.entity.world.explode(self.entity.pos.load(), 6.0);
         }
 
         // TODO
-        self.entity.remove().await;
+        self.entity.remove();
         true
     }
 

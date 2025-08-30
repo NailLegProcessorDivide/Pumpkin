@@ -22,7 +22,7 @@ impl Navigator {
         self.current_goal = None;
     }
 
-    pub async fn tick(&mut self, entity: &LivingEntity) {
+    pub fn tick(&mut self, entity: &LivingEntity) {
         if let Some(goal) = &mut self.current_goal {
             // First, let's check if we have reached the destination
             if goal.current_progress == goal.destination {
@@ -46,9 +46,7 @@ impl Navigator {
                         goal.current_progress.y,
                         goal.current_progress.z + z,
                     );
-                    let state = world
-                        .get_block_state(&BlockPos(potential_pos.to_i32()))
-                        .await;
+                    let state = world.get_block_state(&BlockPos(potential_pos.to_i32()));
                     let shapes = state.get_block_collision_shapes();
                     if !shapes.is_empty() {
                         continue;
@@ -75,7 +73,7 @@ impl Navigator {
 
             // Now let's move
             entity.entity.set_pos(goal.current_progress);
-            entity.entity.send_pos().await;
+            entity.entity.send_pos();
         }
     }
 

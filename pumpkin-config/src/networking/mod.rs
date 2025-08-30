@@ -4,7 +4,7 @@ use query::QueryConfig;
 use rcon::RCONConfig;
 use serde::{Deserialize, Serialize};
 
-use crate::{CompressionConfig, LANBroadcastConfig};
+use crate::{CompressionConfig, LANBroadcastConfig, networking::proxy::ProxyType};
 
 pub mod auth;
 pub mod compression;
@@ -18,7 +18,7 @@ pub struct NetworkingConfig {
     pub authentication: AuthenticationConfig,
     pub query: QueryConfig,
     pub rcon: RCONConfig,
-    pub proxy: ProxyConfig,
+    pub proxy: Option<ProxyType>,
     pub packet_compression: CompressionConfig,
     pub lan_broadcast: LANBroadcastConfig,
 }
